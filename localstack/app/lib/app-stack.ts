@@ -57,25 +57,9 @@ export class AppStack extends cdk.Stack {
       },
     });
 
-    ruleInput.addTarget(new SqsQueue(sqsInput, {
-      message: RuleTargetInput.fromObject({
-        source: 'mcp.tool.git.commit-files',
-        detailType: 'input',
-        detail: {
-          event: '$.detail'
-        }
-      })
-    }));
+    ruleInput.addTarget(new SqsQueue(sqsInput));
 
-    ruleOutput.addTarget(new SqsQueue(sqsOutput, {
-      message: RuleTargetInput.fromObject({
-        source: 'mcp.tool.git.commit-files',
-        detailType: 'output',
-        detail: {
-          event: '$.detail'
-        }
-      })
-    }));
+    ruleOutput.addTarget(new SqsQueue(sqsOutput));
 
     // Parametro de infraestructura
 
