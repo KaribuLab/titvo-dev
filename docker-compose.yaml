@@ -1,0 +1,35 @@
+services:
+  cdk:
+    build: ./docker/cdk
+    env_file:
+      - .env.localstack
+    environment:
+      AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+    volumes:
+      - ./localstack/app:/app
+    depends_on:
+      - localstack
+    networks:
+      - localstack
+  localstack:
+    image: localstack/localstack:4.8.1
+    ports:
+      - 4566:4566
+      - 4510-4559:4510-4559
+    volumes:
+      - localstack:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      localstack:
+        ipv4_address: ${DOCKER_LOCALSTACK_IP:-10.5.0.5}
+volumes:
+  localstack:
+
+networks:
+  localstack:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-10.5.0.0/16}
+          gateway: ${DOCKER_NETWORK_GATEWAY:-10.5.0.1}
