@@ -1,0 +1,3 @@
+[submodule "src/mcp/git-commit-files"]
+	path = src/mcp/git-commit-files
+	url = git@github.com:KaribuLab/titvo-git-commit-files-aws.git
