@@ -9,9 +9,11 @@ fi
 
 cd /app
 
-echo "Installing dependencies"
+echo "Installing dependencies and building"
 
 npm install
+npm run build
+rm -rf cdk.out
 
 echo "Bootstrapping CDK"
 echo "AWS_ENDPOINT_URL: $AWS_ENDPOINT_URL"
