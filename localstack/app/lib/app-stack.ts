@@ -6,7 +6,7 @@ import { Construct } from 'constructs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 
-const basePath = '/karibu/agentic-arch/localstack/infra';
+const basePath = '/tvo/security-scan/localstack/infra';
 
 export class AppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {

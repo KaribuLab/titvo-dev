@@ -5,15 +5,9 @@ export default defineConfig({
   triggers: [
     {
       expression: ['match', '*.ts', 'basename'],
-      name: 'build',
-      onChange: async ({ spawn }) => {
-        await spawn`tsc`;
-      },
-    },
-    {
-      expression: ['match', '*.ts', 'basename'],
       name: 'deploy',
       onChange: async ({ spawn }) => {
+        await spawn`rm -rf cdk.out && tsc`;
         await spawn`cdklocal deploy --require-approval=never`;
       },
     },
