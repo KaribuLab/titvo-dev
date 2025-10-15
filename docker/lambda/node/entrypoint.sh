@@ -10,6 +10,9 @@ fi
 echo "Installing dependencies of app"
 
 npm install
+npm run build
+mkdir -p dist
+zip -r ./dist/lambda.zip ./build
 
 cd cdklocal
 
