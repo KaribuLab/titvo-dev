@@ -34,11 +34,20 @@ docker compose exec git-commit-files aws events put-events \
 ### Input
 ```json
 {
-  "issueId": "abc123",
-  "issueTitle": "My issue title",
-  "issueDescription": "My issue description",
-  "issueSeverity": "low",
-  "issueStatus": "open"
+  "repository": "https://github.com/my-repo.git",
+  "status": "success",
+  "annotations": [
+    {
+      "title": "My issue title",
+      "description": "My issue description",
+      "severity": "low",
+      "path": "src/index.js",
+      "line": 1,
+      "summary": "My issue summary",
+      "code": "console.log('Hello, world!');",
+      "recommendation": "Add a new function to the code"
+    }
+  ]
 }
 ```
 
@@ -50,7 +59,7 @@ docker compose exec issue-report aws events put-events \
     {
       "Source": "mcp.tool.issue.report",
       "DetailType": "input",
-      "Detail": "{\"issueId\":\"abc123\",\"issueTitle\":\"My issue title\",\"issueDescription\":\"My issue description\",\"issueSeverity\":\"low\",\"issueStatus\":\"open\"}",
+      "Detail": "{\"repository\":\"https://github.com/my-repo.git\",\"status\":\"success\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"code\":\"console.log( Hello, world! );\",\"recommendation\":\"Add a new function to the code\"}]}",
       "EventBusName": "tvo-event-bus-local"
     }
   ]'
