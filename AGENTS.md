@@ -40,4 +40,9 @@ El proyecto usa conventional commits de Git.
 - `build`: Cambios en la construcción del proyecto.
 - `ci`: Cambios en la configuración de CI.
 
+Los prefijos de los commits se utilizan para semantic versioning, por lo que hay que considerar si efectivamente el prefijo corresponde a un incremento de versión: MAJOR, MINOR, PATCH.
+- MAJOR: Cambios que afectan la compatibilidad con versiones anteriores.
+- MINOR: Cambios que añaden funcionalidad pero no afectan la compatibilidad.
+- PATCH: Cambios que arreglan errores o mejoras de rendimiento.
+
 Los mensajes de commit deben ser en español.
