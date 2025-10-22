@@ -34,8 +34,8 @@ docker compose exec git-commit-files aws events put-events \
 ### Input
 ```json
 {
-  "repository": "https://github.com/my-repo.git",
-  "status": "success",
+  "taskId": "1234567890",
+  "status": "SUCCESS",
   "annotations": [
     {
       "title": "My issue title",
@@ -44,7 +44,7 @@ docker compose exec git-commit-files aws events put-events \
       "path": "src/index.js",
       "line": 1,
       "summary": "My issue summary",
-      "code": "console.log('Hello, world!');",
+      "code": "console.log( Hello, world! );",
       "recommendation": "Add a new function to the code"
     }
   ]
@@ -54,13 +54,13 @@ docker compose exec git-commit-files aws events put-events \
 ### Trigger
 
 ```bash
-docker compose exec issue-report aws events put-events \
-  --entries '[
-    {
-      "Source": "mcp.tool.issue.report",
-      "DetailType": "input",
-      "Detail": "{\"repository\":\"https://github.com/my-repo.git\",\"status\":\"success\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"code\":\"console.log( Hello, world! );\",\"recommendation\":\"Add a new function to the code\"}]}",
-      "EventBusName": "tvo-event-bus-local"
-    }
-  ]'
+docker compose exec issue-report aws events put-events --entries '
+[
+  {
+    "Source": "mcp.tool.issue.report",
+    "DetailType": "input",
+    "Detail": "{\"taskId\":\"1234567890\",\"data\":{\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"code\":\"console.log( \\\"Hello, world!\\\" );\",\"recommendation\":\"Add a new function to the code\"}]}}",
+    "EventBusName": "tvo-event-bus-local"
+  }
+]'
 ```

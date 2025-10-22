@@ -2,6 +2,23 @@
 
 set -e
 
+wait_for_stack_completion() {
+  aws cloudformation wait stack-exists --stack-name $CDK_STACK_NAME
+  aws cloudformation wait stack-create-complete --stack-name $CDK_STACK_NAME
+}
+
+tail_logs() {
+  wait_for_stack_completion
+  local cloudwatch_logs_group=$(aws cloudformation describe-stacks --stack-name $CDK_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='CloudWatchLogGroupName'].OutputValue" --output text)
+  echo "CloudWatch log group: $cloudwatch_logs_group"
+  aws logs tail --follow --since 1m $cloudwatch_logs_group
+}
+
+if [ -z "$CDK_STACK_NAME" ]; then
+    echo "CDK_STACK_NAME is not set"
+    exit 1
+fi
+
 if [ ! -d "cdklocal" ]; then
     echo "No cdk directory found"
     exit 1
@@ -55,5 +72,7 @@ echo "LocalStack está listo, ejecutando bootstrap..."
 cdklocal bootstrap
 
 cd ..
+
+tail_logs &
 
 exec "$@"

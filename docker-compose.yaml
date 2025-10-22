@@ -19,6 +19,7 @@ services:
     environment:
       AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      CDK_STACK_NAME: McpGitCommitFilesStack
     volumes:
       - ./src/mcp/git-commit-files:/home/node/app
     depends_on:
@@ -32,6 +33,7 @@ services:
     environment:
       AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      CDK_STACK_NAME: McpIssueReportStack
     volumes:
       - ./src/mcp/issue-report:/home/node/app
     depends_on:
