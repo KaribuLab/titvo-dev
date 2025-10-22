@@ -28,3 +28,30 @@ docker compose exec git-commit-files aws events put-events \
     }
   ]'
 ```
+
+## MCP Issue Report
+
+### Input
+```json
+{
+  "issueId": "abc123",
+  "issueTitle": "My issue title",
+  "issueDescription": "My issue description",
+  "issueSeverity": "low",
+  "issueStatus": "open"
+}
+```
+
+### Trigger
+
+```bash
+docker compose exec issue-report aws events put-events \
+  --entries '[
+    {
+      "Source": "mcp.tool.issue.report",
+      "DetailType": "input",
+      "Detail": "{\"issueId\":\"abc123\",\"issueTitle\":\"My issue title\",\"issueDescription\":\"My issue description\",\"issueSeverity\":\"low\",\"issueStatus\":\"open\"}",
+      "EventBusName": "tvo-event-bus-local"
+    }
+  ]'
+```

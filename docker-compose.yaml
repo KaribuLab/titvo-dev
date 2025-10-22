@@ -25,6 +25,19 @@ services:
       - localstack
     networks:
       - localstack
+  issue-report:
+    build: ./docker/lambda/node
+    env_file:
+      - .env.localstack
+    environment:
+      AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+    volumes:
+      - ./src/mcp/issue-report:/home/node/app
+    depends_on:
+      - localstack
+    networks:
+      - localstack
   localstack:
     image: localstack/localstack:4.8.1
     ports:

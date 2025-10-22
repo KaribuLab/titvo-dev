@@ -13,6 +13,8 @@ export class AppStack extends cdk.Stack {
     super(scope, id, props);
     // SQS
 
+    // Git Commit Files
+
     const sqsInput = new Queue(this, 'InputQueue', {
       queueName: 'tvo-mcp-git-commit-files-input-local',
       visibilityTimeout: cdk.Duration.seconds(300),
@@ -20,6 +22,18 @@ export class AppStack extends cdk.Stack {
 
     const sqsOutput = new Queue(this, 'OutputQueue', {
       queueName: 'tvo-mcp-git-commit-files-output-local',
+      visibilityTimeout: cdk.Duration.seconds(300),
+    });
+
+    // Issue Report
+
+    const sqsInputIssueReport = new Queue(this, 'InputQueueIssueReport', {
+      queueName: 'tvo-mcp-issue-report-input-local',
+      visibilityTimeout: cdk.Duration.seconds(300),
+    });
+
+    const sqsOutputIssueReport = new Queue(this, 'OutputQueueIssueReport', {
+      queueName: 'tvo-mcp-issue-report-output-local',
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
@@ -36,6 +50,8 @@ export class AppStack extends cdk.Stack {
     const eventBus = new EventBus(this, 'EventBus', {
       eventBusName: 'tvo-event-bus-local',
     });
+
+    // Git Commit Files
 
     const ruleInput = new Rule(this, 'Rule', {
       eventBus: eventBus,
@@ -61,7 +77,35 @@ export class AppStack extends cdk.Stack {
 
     ruleOutput.addTarget(new SqsQueue(sqsOutput));
 
+    // Issue Report
+
+    const ruleInputIssueReport = new Rule(this, 'RuleInputIssueReport', {
+      eventBus: eventBus,
+      description: 'Rule to trigger when a issue report input is received',
+      ruleName: 'mcp-issue-report-input',
+      eventPattern: {
+        source: ['mcp.tool.issue.report'],
+        detailType: ['input'],
+      },
+    });
+
+    const ruleOutputIssueReport = new Rule(this, 'RuleOutputIssueReport', {
+      eventBus: eventBus,
+      description: 'Rule to trigger when a issue report output is received',
+      ruleName: 'mcp-issue-report-output',
+      eventPattern: {
+        source: ['mcp.tool.issue.report'],
+        detailType: ['output'],
+      },
+    });
+
+    ruleInputIssueReport.addTarget(new SqsQueue(sqsInputIssueReport));
+
+    ruleOutputIssueReport.addTarget(new SqsQueue(sqsOutputIssueReport));
+
     // Parametro de infraestructura
+
+    // Git Commit Files
 
     new StringParameter(this, 'SSMParameterInputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_arn`,
@@ -98,6 +142,46 @@ export class AppStack extends cdk.Stack {
       stringValue: sqsOutput.queueName,
       description: 'Nombre de la cola de salida de MCP Git Commit Files'
     });
+
+    // Issue Report
+
+    new StringParameter(this, 'SSMParameterInputQueueIssueReportArn', {
+      parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_arn`,
+      stringValue: sqsInputIssueReport.queueArn,
+      description: 'ARN de la cola de entrada de MCP Issue Report'
+    });
+
+    new StringParameter(this, 'SSMParameterInputQueueIssueReportName', {
+      parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_name`,
+      stringValue: sqsInputIssueReport.queueName,
+      description: 'Nombre de la cola de entrada de MCP Issue Report'
+    });
+
+    new StringParameter(this, 'SSMParameterInputQueueIssueReportUrl', {
+      parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_url`,
+      stringValue: sqsInputIssueReport.queueUrl,
+      description: 'URL de la cola de entrada de MCP Issue Report'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueIssueReportArn', {
+      parameterName: `${basePath}/sqs/mcp/issue-report/output/queue_arn`,
+      stringValue: sqsOutputIssueReport.queueArn,
+      description: 'ARN de la cola de salida de MCP Issue Report'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueIssueReportName', {
+      parameterName: `${basePath}/sqs/mcp/issue-report/output/queue_name`,
+      stringValue: sqsOutputIssueReport.queueName,
+      description: 'Nombre de la cola de salida de MCP Issue Report'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueIssueReportUrl', {
+      parameterName: `${basePath}/sqs/mcp/issue-report/output/queue_url`,
+      stringValue: sqsOutputIssueReport.queueUrl,
+      description: 'URL de la cola de salida de MCP Issue Report'
+    });
+
+    // EventBus
 
     new StringParameter(this, 'SSMParameterEventBusArn', {
       parameterName: `${basePath}/eventbridge/eventbus_arn`,
