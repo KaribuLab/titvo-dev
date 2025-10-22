@@ -5,6 +5,7 @@ import { Queue } from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { Bucket } from 'aws-cdk-lib/aws-s3';
 
 const basePath = '/tvo/security-scan/localstack/infra';
 
@@ -102,6 +103,17 @@ export class AppStack extends cdk.Stack {
     ruleInputIssueReport.addTarget(new SqsQueue(sqsInputIssueReport));
 
     ruleOutputIssueReport.addTarget(new SqsQueue(sqsOutputIssueReport));
+
+    // S3
+
+    // Bucket de reportes de seguridad
+    const s3Report = new Bucket(this, 'S3Report', {
+      bucketName: 'tvo-security-scan-report-local',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      websiteIndexDocument: 'index.html',
+      publicReadAccess: true,
+      blockPublicAccess: cdk.aws_s3.BlockPublicAccess.BLOCK_ACLS_ONLY,
+    });
 
     // Parametro de infraestructura
 
@@ -205,6 +217,26 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/dynamodb/process/dynamodb_table_name`,
       stringValue: dynamoDB.tableName,
       description: 'Nombre de la tabla de MCP Git Commit Files'
+    });
+
+    // S3
+
+    new StringParameter(this, 'SSMParameterS3ReportBucketArn', {
+      parameterName: `${basePath}/s3/report/bucket_arn`,
+      stringValue: s3Report.bucketArn,
+      description: 'ARN del bucket de reportes de seguridad'
+    });
+
+    new StringParameter(this, 'SSMParameterS3ReportBucketName', {
+      parameterName: `${basePath}/s3/report/bucket_name`,
+      stringValue: s3Report.bucketName,
+      description: 'Nombre del bucket de reportes de seguridad'
+    });
+
+    new StringParameter(this, 'SSMParameterS3ReportWebsiteUrl', {
+      parameterName: `${basePath}/s3/report/website_url`,
+      stringValue: s3Report.bucketWebsiteUrl,
+      description: 'URL del sitio web de reportes de seguridad'
     });
 
   }
