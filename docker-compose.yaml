@@ -6,6 +6,9 @@ services:
     environment:
       AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AES_KEY: ${AES_KEY:-12345678901234567890123456789012}
+      BITBUCKET_CLIENT_ID: ${BITBUCKET_CLIENT_ID:-key_bitbucket}
+      BITBUCKET_CLIENT_SECRET: ${BITBUCKET_CLIENT_SECRET:-secret_bitbucket}
     volumes:
       - ./localstack/app:/app
     depends_on:
@@ -22,6 +25,20 @@ services:
       CDK_STACK_NAME: McpGitCommitFilesStack
     volumes:
       - ./src/mcp/git-commit-files:/home/node/app
+    depends_on:
+      - localstack
+    networks:
+      - localstack
+  bitbucket-code-insights:
+    build: ./docker/lambda/node
+    env_file:
+      - .env.localstack
+    environment:
+      AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      CDK_STACK_NAME: McpBitbucketCodeInsightsStack
+    volumes:
+      - ./src/mcp/bitbucket-code-insights:/home/node/app
     depends_on:
       - localstack
     networks:
