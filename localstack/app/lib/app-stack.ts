@@ -343,7 +343,7 @@ export class AppStack extends cdk.Stack {
     });
 
     new Secret(this, 'SecretManagerParameter', {
-      secretName: `${basePath}/aes_secret`,
+      secretName: '/tvo/security-scan/localstack/aes_secret',
       description: 'Parametro de la secret manager para el AES',
       secretStringValue: cdk.SecretValue.unsafePlainText(aesKey),
     });
