@@ -67,8 +67,8 @@ function encrypt(text: string, key: string): string {
 }
 
 (async () => {
-    const bitbucketClientId = encrypt(process.env.BITBUCKET_CLIENT_ID as string, aesKey);
-    const bitbucketClientSecret = encrypt(process.env.BITBUCKET_CLIENT_SECRET as string, aesKey);
+    const bitbucketClientId = process.env.BITBUCKET_CLIENT_ID as string
+    const bitbucketClientSecret = process.env.BITBUCKET_CLIENT_SECRET as string
     const bitbucketClientCredentials: Record<string, string> = {
         key: bitbucketClientId,
         secret: bitbucketClientSecret
