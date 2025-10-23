@@ -10,6 +10,7 @@ export default defineConfig({
         await spawn`rm -rf cdk.out && tsc`;
         await spawn`cdklocal destroy --force --require-approval=never`;
         await spawn`cdklocal deploy --require-approval=never`;
+        await spawn`npx ts-node setup.ts`;
       },
     },
   ],

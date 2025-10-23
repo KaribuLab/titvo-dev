@@ -6,8 +6,10 @@ import { Construct } from 'constructs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 
 const basePath = '/tvo/security-scan/localstack/infra';
+const aesKey = process.env.AES_KEY ?? 'secret_key_aes';
 
 export class AppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -38,12 +40,33 @@ export class AppStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
+    // Bitbucket Code Insights
+
+    const sqsInputBitbucketCodeInsights = new Queue(this, 'InputBitbucketCodeInsights', {
+      queueName: 'tvo-mcp-bitbucket-code-insights-input-local',
+      visibilityTimeout: cdk.Duration.seconds(300),
+    });
+
+    const sqsOutputBitbucketCodeInsights = new Queue(this, 'OutputBitbucketCodeInsights', {
+      queueName: 'tvo-mcp-bitbucket-code-insights-output-local',
+      visibilityTimeout: cdk.Duration.seconds(300),
+    });
+
     // DynamoDB
+
+    // Task Table
 
     const dynamoDB = new Table(this, 'DynamoDB', {
       tableName: 'tvo-task-local',
       partitionKey: { name: 'task_id', type: AttributeType.STRING },
       timeToLiveAttribute: 'ttl',
+    });
+
+    // Parameter Table
+
+    const dynamoDBParameter = new Table(this, 'DynamoDBParameter', {
+      tableName: 'tvo-parameter-configuration-local',
+      partitionKey: { name: 'parameter_id', type: AttributeType.STRING },
     });
 
     // EventBus
@@ -103,6 +126,32 @@ export class AppStack extends cdk.Stack {
     ruleInputIssueReport.addTarget(new SqsQueue(sqsInputIssueReport));
 
     ruleOutputIssueReport.addTarget(new SqsQueue(sqsOutputIssueReport));
+
+    // Bitbucket Code Insights
+
+    const ruleInputBitbucketCodeInsights = new Rule(this, 'RuleInputBitbucketCodeInsights', {
+      eventBus: eventBus,
+      description: 'Rule to trigger when a bitbucket code insights input is received',
+      ruleName: 'mcp-bitbucket-code-insights-input',
+      eventPattern: {
+        source: ['mcp.tool.bitbucket.code-insights'],
+        detailType: ['input'],
+      },
+    });
+
+    const ruleOutputBitbucketCodeInsights = new Rule(this, 'RuleOutputBitbucketCodeInsights', {
+      eventBus: eventBus,
+      description: 'Rule to trigger when a bitbucket code insights output is received',
+      ruleName: 'mcp-bitbucket-code-insights-output',
+      eventPattern: {
+        source: ['mcp.tool.bitbucket.code-insights'],
+        detailType: ['output'],
+      },
+    });
+
+    ruleInputBitbucketCodeInsights.addTarget(new SqsQueue(sqsInputBitbucketCodeInsights));
+
+    ruleOutputBitbucketCodeInsights.addTarget(new SqsQueue(sqsOutputBitbucketCodeInsights));
 
     // S3
 
@@ -193,6 +242,44 @@ export class AppStack extends cdk.Stack {
       description: 'URL de la cola de salida de MCP Issue Report'
     });
 
+    // Bitbucket Code Insights
+
+    new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsArn', {
+      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_arn`,
+      stringValue: sqsInputBitbucketCodeInsights.queueArn,
+      description: 'ARN de la cola de entrada de MCP Bitbucket Code Insights'
+    });
+
+    new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsName', {
+      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_name`,
+      stringValue: sqsInputBitbucketCodeInsights.queueName,
+      description: 'Nombre de la cola de entrada de MCP Bitbucket Code Insights'
+    });
+
+    new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsUrl', {
+      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_url`,
+      stringValue: sqsInputBitbucketCodeInsights.queueUrl,
+      description: 'URL de la cola de entrada de MCP Bitbucket Code Insights'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueBitbucketCodeInsightsArn', {
+      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_arn`,
+      stringValue: sqsOutputBitbucketCodeInsights.queueArn,
+      description: 'ARN de la cola de salida de MCP Bitbucket Code Insights'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueBitbucketCodeInsightsName', {
+      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_name`,
+      stringValue: sqsOutputBitbucketCodeInsights.queueName,
+      description: 'Nombre de la cola de salida de MCP Bitbucket Code Insights'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueBitbucketCodeInsightsUrl', {
+      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_url`,
+      stringValue: sqsOutputBitbucketCodeInsights.queueUrl,
+      description: 'URL de la cola de salida de MCP Bitbucket Code Insights'
+    });
+
     // EventBus
 
     new StringParameter(this, 'SSMParameterEventBusArn', {
@@ -207,6 +294,8 @@ export class AppStack extends cdk.Stack {
       description: 'Nombre del bus de eventos de MCP Git Commit Files'
     });
 
+    // Task Table
+
     new StringParameter(this, 'SSMParameterDynamoDBTableArn', {
       parameterName: `${basePath}/dynamodb/process/dynamodb_table_arn`,
       stringValue: dynamoDB.tableArn,
@@ -217,6 +306,20 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/dynamodb/process/dynamodb_table_name`,
       stringValue: dynamoDB.tableName,
       description: 'Nombre de la tabla de MCP Git Commit Files'
+    });
+
+    // Parameter Table
+
+    new StringParameter(this, 'SSMParameterDynamoDBParameterTableArn', {
+      parameterName: `${basePath}/dynamodb/parameter/dynamodb_table_arn`,
+      stringValue: dynamoDBParameter.tableArn,
+      description: 'ARN de la tabla de parametros de configuracion'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoDBParameterTableName', {
+      parameterName: `${basePath}/dynamodb/parameter/dynamodb_table_name`,
+      stringValue: dynamoDBParameter.tableName,
+      description: 'Nombre de la tabla de parametros de configuracion'
     });
 
     // S3
@@ -237,6 +340,12 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/s3/report/website_url`,
       stringValue: s3Report.bucketWebsiteUrl,
       description: 'URL del sitio web de reportes de seguridad'
+    });
+
+    new Secret(this, 'SecretManagerParameter', {
+      secretName: `${basePath}/aes_secret`,
+      description: 'Parametro de la secret manager para el AES',
+      secretStringValue: cdk.SecretValue.unsafePlainText(aesKey),
     });
 
   }
