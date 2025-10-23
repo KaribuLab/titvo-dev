@@ -47,7 +47,7 @@ echo "Installing dependencies of app"
 npm install
 npm run build
 mkdir -p dist
-zip -r ./dist/lambda.zip ./build
+cd build && zip -r ../dist/lambda.zip . && cd ..
 
 cd cdklocal
 
