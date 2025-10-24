@@ -7,3 +7,6 @@
 [submodule "src/mcp/bitbucket-code-insights"]
 	path = src/mcp/bitbucket-code-insights
 	url = git@github.com:KaribuLab/titvo-bitbucket-code-insights-aws.git
+[submodule "src/mcp/github-issue"]
+	path = src/mcp/github-issue
+	url = git@github.com:KaribuLab/titvo-github-issue-aws.git
