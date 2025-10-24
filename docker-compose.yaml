@@ -43,6 +43,20 @@ services:
       - localstack
     networks:
       - localstack
+  github-issue:
+    build: ./docker/lambda/node
+    env_file:
+      - .env.localstack
+    environment:
+      AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      CDK_STACK_NAME: McpGithubIssueStack
+    volumes:
+      - ./src/mcp/github-issue:/home/node/app
+    depends_on:
+      - localstack
+    networks:
+      - localstack
   issue-report:
     build: ./docker/lambda/node
     env_file:
