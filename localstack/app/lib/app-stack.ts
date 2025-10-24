@@ -52,6 +52,18 @@ export class AppStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
+    // Github Issue
+
+    const sqsInputGithubIssue = new Queue(this, 'InputGithubIssue', {
+      queueName: 'tvo-mcp-github-issue-input-local',
+      visibilityTimeout: cdk.Duration.seconds(300),
+    });
+
+    const sqsOutputGithubIssue = new Queue(this, 'OutputGithubIssue', {
+      queueName: 'tvo-mcp-github-issue-output-local',
+      visibilityTimeout: cdk.Duration.seconds(300),
+    });
+
     // DynamoDB
 
     // Task Table
@@ -152,6 +164,31 @@ export class AppStack extends cdk.Stack {
     ruleInputBitbucketCodeInsights.addTarget(new SqsQueue(sqsInputBitbucketCodeInsights));
 
     ruleOutputBitbucketCodeInsights.addTarget(new SqsQueue(sqsOutputBitbucketCodeInsights));
+
+    // Github Issue
+    const ruleInputGithubIssue = new Rule(this, 'RuleInputGithubIssue', {
+      eventBus: eventBus,
+      description: 'Rule to trigger when a github issue input is received',
+      ruleName: 'mcp-github-issue-input',
+      eventPattern: {
+        source: ['mcp.tool.github.issue'],
+        detailType: ['input'],
+      },
+    });
+
+    const ruleOutputGithubIssue = new Rule(this, 'RuleOutputGithubIssue', {
+      eventBus: eventBus,
+      description: 'Rule to trigger when a github issue output is received',
+      ruleName: 'mcp-github-issue-output',
+      eventPattern: {
+        source: ['mcp.tool.github.issue'],
+        detailType: ['output'],
+      },
+    });
+
+    ruleInputGithubIssue.addTarget(new SqsQueue(sqsInputGithubIssue));
+
+    ruleOutputGithubIssue.addTarget(new SqsQueue(sqsOutputGithubIssue));
 
     // S3
 
@@ -278,6 +315,43 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_url`,
       stringValue: sqsOutputBitbucketCodeInsights.queueUrl,
       description: 'URL de la cola de salida de MCP Bitbucket Code Insights'
+    });
+
+    // Github Issue
+    new StringParameter(this, 'SSMParameterInputQueueGithubIssueArn', {
+      parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_arn`,
+      stringValue: sqsInputGithubIssue.queueArn,
+      description: 'ARN de la cola de entrada de MCP Github Issue'
+    });
+
+    new StringParameter(this, 'SSMParameterInputQueueGithubIssueName', {
+      parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_name`,
+      stringValue: sqsInputGithubIssue.queueName,
+      description: 'Nombre de la cola de entrada de MCP Github Issue'
+    });
+
+    new StringParameter(this, 'SSMParameterInputQueueGithubIssueUrl', {
+      parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_url`,
+      stringValue: sqsInputGithubIssue.queueUrl,
+      description: 'URL de la cola de entrada de MCP Github Issue'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueGithubIssueArn', {
+      parameterName: `${basePath}/sqs/mcp/github-issue/output/queue_arn`,
+      stringValue: sqsOutputGithubIssue.queueArn,
+      description: 'ARN de la cola de salida de MCP Github Issue'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueGithubIssueName', {
+      parameterName: `${basePath}/sqs/mcp/github-issue/output/queue_name`,
+      stringValue: sqsOutputGithubIssue.queueName,
+      description: 'Nombre de la cola de salida de MCP Github Issue'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueGithubIssueUrl', {
+      parameterName: `${basePath}/sqs/mcp/github-issue/output/queue_url`,
+      stringValue: sqsOutputGithubIssue.queueUrl,
+      description: 'URL de la cola de salida de MCP Github Issue'
     });
 
     // EventBus
