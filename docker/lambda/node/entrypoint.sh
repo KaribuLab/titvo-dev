@@ -53,10 +53,10 @@ cd cdklocal
 
 echo "Installing dependencies and building cdklocal"
 
+npm install
+
 npm run build
 rm -rf cdk.out
-
-npm install
 
 echo "Bootstrapping CDK"
 echo "AWS_ENDPOINT_URL: $AWS_ENDPOINT_URL"
