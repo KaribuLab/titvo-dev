@@ -9,6 +9,7 @@ services:
       AES_KEY: ${AES_KEY:-12345678901234567890123456789012}
       BITBUCKET_CLIENT_ID: ${BITBUCKET_CLIENT_ID:-key_bitbucket}
       BITBUCKET_CLIENT_SECRET: ${BITBUCKET_CLIENT_SECRET:-secret_bitbucket}
+      GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-token_github}
     volumes:
       - ./localstack/app:/app
     depends_on:

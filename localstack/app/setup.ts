@@ -75,4 +75,7 @@ function encrypt(text: string, key: string): string {
     }
     console.log('Setting Bitbucket client credentials');
     await putItem('bitbucket_client_credentials', encrypt(JSON.stringify(bitbucketClientCredentials), aesKey));
+    const githubAccessToken = process.env.GITHUB_ACCESS_TOKEN as string
+    console.log('Setting Github access token');
+    await putItem('github_access_token', encrypt(githubAccessToken, aesKey));
 })()
