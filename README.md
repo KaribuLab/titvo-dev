@@ -36,7 +36,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 \
 
 ```json
 {
-  "task_id": "1234567890",
+  "job_id": "1234567890",
   "data": {
     "status": "SUCCESS",
     "annotations": [
@@ -63,7 +63,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
   {
     "Source": "mcp.tool.issue.report",
     "DetailType": "input",
-    "Detail": "{\"task_id\":\"1234567890\",\"data\":{\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"code\":\"console.log( \\\"Hello, world!\\\" );\",\"recommendation\":\"Add a new function to the code\"}]}}",
+    "Detail": "{\"job_id\":\"1234567890\",\"data\":{\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"code\":\"console.log( \\\"Hello, world!\\\" );\",\"recommendation\":\"Add a new function to the code\"}]}}",
     "EventBusName": "tvo-event-bus-local"
   }
 ]'
@@ -75,7 +75,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
 
 ```json
 {
-  "task_id": "1234567890",
+  "job_id": "1234567890",
   "data": {
     "report_url": "https://example.com/reports/1234567890.html",
     "workspace_id": "karibu-cl",
@@ -105,7 +105,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
   {
     "Source": "mcp.tool.bitbucket.code-insights",
     "DetailType": "input",
-    "Detail": "{\"task_id\":\"1234567890\",\"data\":{\"report_url\":\"https://example.com/reports/1234567890.html\",\"workspace_id\":\"karibu-cl\",\"commit_hash\":\"1535092799115cc465e091fb2f06473e41ed88c5\",\"repo_slug\":\"krb-web-ui-vulnerable\",\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"recommendation\":\"Add a new function to the code\"}]}}",
+    "Detail": "{\"job_id\":\"1234567890\",\"data\":{\"report_url\":\"https://example.com/reports/1234567890.html\",\"workspace_id\":\"karibu-cl\",\"commit_hash\":\"1535092799115cc465e091fb2f06473e41ed88c5\",\"repo_slug\":\"krb-web-ui-vulnerable\",\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"line\":1,\"summary\":\"My issue summary\",\"recommendation\":\"Add a new function to the code\"}]}}",
     "EventBusName": "tvo-event-bus-local"
   }
 ]'
@@ -117,7 +117,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
 
 ```json
 {
-  "task_id": "1234567890",
+  "job_id": "1234567890",
   "data": {
     "repo_owner": "pascencio",
     "repo_name": "devsecops",
@@ -148,7 +148,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
   {
     "Source": "mcp.tool.github.issue",
     "DetailType": "input",
-    "Detail": "{\"task_id\":\"1234567890\",\"data\":{\"repo_owner\":\"pascencio\",\"repo_name\":\"devsecops\",\"asignee\":\"pascencio\",\"commit_hash\":\"7f5ccb64e095f20ea15d33f20b98375a2d9c78b0\",\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"code\":\"console.log( \\\"Hello, world!\\\" );\",\"line\":1,\"summary\":\"My issue summary\",\"recommendation\":\"Add a new function to the code\"}]}}",
+    "Detail": "{\"job_id\":\"1234567890\",\"data\":{\"repo_owner\":\"pascencio\",\"repo_name\":\"devsecops\",\"asignee\":\"pascencio\",\"commit_hash\":\"7f5ccb64e095f20ea15d33f20b98375a2d9c78b0\",\"status\":\"SUCCESS\",\"annotations\":[{\"title\":\"My issue title\",\"description\":\"My issue description\",\"severity\":\"low\",\"path\":\"src/index.js\",\"code\":\"console.log( \\\"Hello, world!\\\" );\",\"line\":1,\"summary\":\"My issue summary\",\"recommendation\":\"Add a new function to the code\"}]}}",
     "EventBusName": "tvo-event-bus-local"
   }
 ]'
