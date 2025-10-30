@@ -10,3 +10,9 @@
 [submodule "src/mcp/github-issue"]
 	path = src/mcp/github-issue
 	url = git@github.com:KaribuLab/titvo-github-issue-aws.git
+[submodule "src/agent"]
+	path = src/agent
+	url = git@github.com:KaribuLab/titvo-agent-aws.git
+[submodule "src/api/task/trigger"]
+	path = src/api/task/trigger
+	url = git@github.com:KaribuLab/titvo-task-trigger-aws.git
