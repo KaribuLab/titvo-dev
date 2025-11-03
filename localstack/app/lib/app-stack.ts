@@ -18,13 +18,13 @@ export class AppStack extends cdk.Stack {
 
     // Git Commit Files
 
-    const sqsInput = new Queue(this, 'InputQueue', {
+    const sqsInput = new Queue(this, 'InputQueueGitCommitFiles', {
       queueName: 'tvo-mcp-git-commit-files-input-local',
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
     const sqsOutput = new Queue(this, 'OutputQueue', {
-      queueName: 'tvo-mcp-git-commit-files-output-local',
+      queueName: 'tvo-mcp-gateway-output-local',
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
@@ -35,11 +35,6 @@ export class AppStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
-    const sqsOutputIssueReport = new Queue(this, 'OutputQueueIssueReport', {
-      queueName: 'tvo-mcp-issue-report-output-local',
-      visibilityTimeout: cdk.Duration.seconds(300),
-    });
-
     // Bitbucket Code Insights
 
     const sqsInputBitbucketCodeInsights = new Queue(this, 'InputBitbucketCodeInsights', {
@@ -47,20 +42,10 @@ export class AppStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
-    const sqsOutputBitbucketCodeInsights = new Queue(this, 'OutputBitbucketCodeInsights', {
-      queueName: 'tvo-mcp-bitbucket-code-insights-output-local',
-      visibilityTimeout: cdk.Duration.seconds(300),
-    });
-
     // Github Issue
 
     const sqsInputGithubIssue = new Queue(this, 'InputGithubIssue', {
       queueName: 'tvo-mcp-github-issue-input-local',
-      visibilityTimeout: cdk.Duration.seconds(300),
-    });
-
-    const sqsOutputGithubIssue = new Queue(this, 'OutputGithubIssue', {
-      queueName: 'tvo-mcp-github-issue-output-local',
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
@@ -79,6 +64,20 @@ export class AppStack extends cdk.Stack {
     const dynamoDBParameter = new Table(this, 'DynamoDBParameter', {
       tableName: 'tvo-parameter-configuration-local',
       partitionKey: { name: 'parameter_id', type: AttributeType.STRING },
+    });
+
+    // API Key Table
+
+    const dynamoDBApiKey = new Table(this, 'DynamoDBApiKey', {
+      tableName: 'tvo-api-key-local',
+      partitionKey: { name: 'api_key_id', type: AttributeType.STRING },
+    });
+
+    // Task CLI Files Table
+    
+    const dynamoDBTaskCliFiles = new Table(this, 'DynamoDBTaskCliFiles', {
+      tableName: 'tvo-task-cli-files-local',
+      partitionKey: { name: 'task_cli_file_id', type: AttributeType.STRING },
     });
 
     // EventBus
@@ -137,7 +136,7 @@ export class AppStack extends cdk.Stack {
 
     ruleInputIssueReport.addTarget(new SqsQueue(sqsInputIssueReport));
 
-    ruleOutputIssueReport.addTarget(new SqsQueue(sqsOutputIssueReport));
+    ruleOutputIssueReport.addTarget(new SqsQueue(sqsOutput));
 
     // Bitbucket Code Insights
 
@@ -163,7 +162,7 @@ export class AppStack extends cdk.Stack {
 
     ruleInputBitbucketCodeInsights.addTarget(new SqsQueue(sqsInputBitbucketCodeInsights));
 
-    ruleOutputBitbucketCodeInsights.addTarget(new SqsQueue(sqsOutputBitbucketCodeInsights));
+    ruleOutputBitbucketCodeInsights.addTarget(new SqsQueue(sqsOutput));
 
     // Github Issue
     const ruleInputGithubIssue = new Rule(this, 'RuleInputGithubIssue', {
@@ -188,7 +187,7 @@ export class AppStack extends cdk.Stack {
 
     ruleInputGithubIssue.addTarget(new SqsQueue(sqsInputGithubIssue));
 
-    ruleOutputGithubIssue.addTarget(new SqsQueue(sqsOutputGithubIssue));
+    ruleOutputGithubIssue.addTarget(new SqsQueue(sqsOutput));
 
     // S3
 
@@ -202,6 +201,19 @@ export class AppStack extends cdk.Stack {
     });
 
     // Parametro de infraestructura
+
+    // Gateway Output Queue
+    new StringParameter(this, 'SSMParameterOutputQueueArn', {
+      parameterName: `${basePath}/sqs/mcp/gateway/output/queue_arn`,
+      stringValue: sqsOutput.queueArn,
+      description: 'ARN de la cola de salida de MCP Gateway'
+    });
+
+    new StringParameter(this, 'SSMParameterOutputQueueName', {
+      parameterName: `${basePath}/sqs/mcp/gateway/output/queue_name`,
+      stringValue: sqsOutput.queueName,
+      description: 'Nombre de la cola de salida de MCP Gateway'
+    });
 
     // Git Commit Files
 
@@ -221,24 +233,6 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_url`,
       stringValue: sqsInput.queueUrl,
       description: 'URL de la cola de entrada de MCP Git Commit Files'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueUrl', {
-      parameterName: `${basePath}/sqs/mcp/git-commit-files/output/queue_url`,
-      stringValue: sqsOutput.queueUrl,
-      description: 'URL de la cola de salida de MCP Git Commit Files'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueArn', {
-      parameterName: `${basePath}/sqs/mcp/git-commit-files/output/queue_arn`,
-      stringValue: sqsOutput.queueArn,
-      description: 'ARN de la cola de salida de MCP Git Commit Files'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueName', {
-      parameterName: `${basePath}/sqs/mcp/git-commit-files/output/queue_name`,
-      stringValue: sqsOutput.queueName,
-      description: 'Nombre de la cola de salida de MCP Git Commit Files'
     });
 
     // Issue Report
@@ -261,24 +255,6 @@ export class AppStack extends cdk.Stack {
       description: 'URL de la cola de entrada de MCP Issue Report'
     });
 
-    new StringParameter(this, 'SSMParameterOutputQueueIssueReportArn', {
-      parameterName: `${basePath}/sqs/mcp/issue-report/output/queue_arn`,
-      stringValue: sqsOutputIssueReport.queueArn,
-      description: 'ARN de la cola de salida de MCP Issue Report'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueIssueReportName', {
-      parameterName: `${basePath}/sqs/mcp/issue-report/output/queue_name`,
-      stringValue: sqsOutputIssueReport.queueName,
-      description: 'Nombre de la cola de salida de MCP Issue Report'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueIssueReportUrl', {
-      parameterName: `${basePath}/sqs/mcp/issue-report/output/queue_url`,
-      stringValue: sqsOutputIssueReport.queueUrl,
-      description: 'URL de la cola de salida de MCP Issue Report'
-    });
-
     // Bitbucket Code Insights
 
     new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsArn', {
@@ -299,24 +275,6 @@ export class AppStack extends cdk.Stack {
       description: 'URL de la cola de entrada de MCP Bitbucket Code Insights'
     });
 
-    new StringParameter(this, 'SSMParameterOutputQueueBitbucketCodeInsightsArn', {
-      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_arn`,
-      stringValue: sqsOutputBitbucketCodeInsights.queueArn,
-      description: 'ARN de la cola de salida de MCP Bitbucket Code Insights'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueBitbucketCodeInsightsName', {
-      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_name`,
-      stringValue: sqsOutputBitbucketCodeInsights.queueName,
-      description: 'Nombre de la cola de salida de MCP Bitbucket Code Insights'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueBitbucketCodeInsightsUrl', {
-      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/output/queue_url`,
-      stringValue: sqsOutputBitbucketCodeInsights.queueUrl,
-      description: 'URL de la cola de salida de MCP Bitbucket Code Insights'
-    });
-
     // Github Issue
     new StringParameter(this, 'SSMParameterInputQueueGithubIssueArn', {
       parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_arn`,
@@ -334,24 +292,6 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_url`,
       stringValue: sqsInputGithubIssue.queueUrl,
       description: 'URL de la cola de entrada de MCP Github Issue'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueGithubIssueArn', {
-      parameterName: `${basePath}/sqs/mcp/github-issue/output/queue_arn`,
-      stringValue: sqsOutputGithubIssue.queueArn,
-      description: 'ARN de la cola de salida de MCP Github Issue'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueGithubIssueName', {
-      parameterName: `${basePath}/sqs/mcp/github-issue/output/queue_name`,
-      stringValue: sqsOutputGithubIssue.queueName,
-      description: 'Nombre de la cola de salida de MCP Github Issue'
-    });
-
-    new StringParameter(this, 'SSMParameterOutputQueueGithubIssueUrl', {
-      parameterName: `${basePath}/sqs/mcp/github-issue/output/queue_url`,
-      stringValue: sqsOutputGithubIssue.queueUrl,
-      description: 'URL de la cola de salida de MCP Github Issue'
     });
 
     // EventBus
@@ -394,6 +334,32 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/dynamodb/parameter/dynamodb_table_name`,
       stringValue: dynamoDBParameter.tableName,
       description: 'Nombre de la tabla de parametros de configuracion'
+    });
+
+    // API Key Table
+    new StringParameter(this, 'SSMParameterDynamoDBApiKeyTableArn', {
+      parameterName: `${basePath}/dynamodb/api-key/dynamodb_table_arn`,
+      stringValue: dynamoDBApiKey.tableArn,
+      description: 'ARN de la tabla de API Key'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoDBApiKeyTableName', {
+      parameterName: `${basePath}/dynamodb/api-key/dynamodb_table_name`,
+      stringValue: dynamoDBApiKey.tableName,
+      description: 'Nombre de la tabla de API Key'
+    });
+
+    // Task CLI Files Table
+    new StringParameter(this, 'SSMParameterDynamoDBTaskCliFilesTableArn', {
+      parameterName: `${basePath}/dynamodb/task-cli-files/dynamodb_table_arn`,
+      stringValue: dynamoDBTaskCliFiles.tableArn,
+      description: 'ARN de la tabla de Task CLI Files'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoDBTaskCliFilesTableName', {
+      parameterName: `${basePath}/dynamodb/task-cli-files/dynamodb_table_name`,
+      stringValue: dynamoDBTaskCliFiles.tableName,
+      description: 'Nombre de la tabla de Task CLI Files'
     });
 
     // S3
