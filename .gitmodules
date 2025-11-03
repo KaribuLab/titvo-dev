@@ -16,3 +16,6 @@
 [submodule "src/api/task/trigger"]
 	path = src/api/task/trigger
 	url = git@github.com:KaribuLab/titvo-task-trigger-aws.git
+[submodule "src/mcp/gateway"]
+	path = src/mcp/gateway
+	url = git@github.com:KaribuLab/titvo-mcp-gateway.git

@@ -24,7 +24,7 @@ export class AppStack extends cdk.Stack {
     });
 
     const sqsOutput = new Queue(this, 'OutputQueue', {
-      queueName: 'tvo-mcp-git-commit-files-output-local',
+      queueName: 'tvo-mcp-output-local',
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
@@ -79,6 +79,14 @@ export class AppStack extends cdk.Stack {
     const dynamoDBParameter = new Table(this, 'DynamoDBParameter', {
       tableName: 'tvo-parameter-configuration-local',
       partitionKey: { name: 'parameter_id', type: AttributeType.STRING },
+    });
+
+    // Job/Message Table (para el gateway MCP)
+    const dynamoDBJobs = new Table(this, 'DynamoDBJobs', {
+      tableName: 'tvo-mcp-jobs-local',
+      partitionKey: { name: 'id', type: AttributeType.STRING },
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     // EventBus
@@ -394,6 +402,20 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/dynamodb/parameter/dynamodb_table_name`,
       stringValue: dynamoDBParameter.tableName,
       description: 'Nombre de la tabla de parametros de configuracion'
+    });
+
+    // Jobs Table
+
+    new StringParameter(this, 'SSMParameterDynamoDBJobsTableArn', {
+      parameterName: `${basePath}/dynamodb/jobs/dynamodb_table_arn`,
+      stringValue: dynamoDBJobs.tableArn,
+      description: 'ARN de la tabla de jobs del gateway MCP'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoDBJobsTableName', {
+      parameterName: `${basePath}/dynamodb/jobs/dynamodb_table_name`,
+      stringValue: dynamoDBJobs.tableName,
+      description: 'Nombre de la tabla de jobs del gateway MCP'
     });
 
     // S3
