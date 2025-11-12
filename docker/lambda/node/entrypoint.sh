@@ -89,6 +89,9 @@ done
 echo "LocalStack está listo, ejecutando bootstrap..."
 cdklocal bootstrap
 
+echo "Bootstrap completado, esperando para evitar conflictos..."
+sleep 3
+
 cd ..
 
 tail_logs &
