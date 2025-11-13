@@ -7,6 +7,7 @@ import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { MockIntegration, PassthroughBehavior, RestApi } from 'aws-cdk-lib/aws-apigateway';
 
 const basePath = '/tvo/security-scan/localstack/infra';
 const aesKey = process.env.AES_KEY ?? 'secret_key_aes';
@@ -14,6 +15,50 @@ const aesKey = process.env.AES_KEY ?? 'secret_key_aes';
 export class AppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // API Gateway 
+  
+    // Task
+
+    const apiGatewayTask = new RestApi(this, 'ApiGatewayTask', {
+      restApiName: 'tvo-security-scan-api-local',
+      description: 'API Gateway for Security Scan',
+      deploy: true,
+      deployOptions: {
+        stageName: 'localstack',
+      },
+    });
+
+    const healthResource = apiGatewayTask.root.addResource('health');
+    healthResource.addMethod('GET', new MockIntegration({
+      integrationResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Content-Type': 'application/json',
+          },
+        },
+      ],
+      passthroughBehavior: PassthroughBehavior.WHEN_NO_MATCH,
+      requestTemplates: {
+        'application/json': JSON.stringify({
+          statusCode: 200,
+          body: JSON.stringify({
+            message: 'OK',
+          }),
+        }),
+      },
+    }),{
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Content-Type': true,
+          },
+        },
+      ],
+    });
+
     // SQS
 
     // Git Commit Files
@@ -82,7 +127,7 @@ export class AppStack extends cdk.Stack {
     });
 
     // Task CLI Files Table
-    
+
     const dynamoDBTaskCliFiles = new Table(this, 'DynamoDBTaskCliFiles', {
       tableName: 'tvo-task-cli-files-local',
       partitionKey: { name: 'task_cli_file_id', type: AttributeType.STRING },
@@ -404,10 +449,28 @@ export class AppStack extends cdk.Stack {
       description: 'URL del sitio web de reportes de seguridad'
     });
 
+    // Secret Manager
+
+    // AES Secret
+
     new Secret(this, 'SecretManagerParameter', {
       secretName: '/tvo/security-scan/localstack/aes_secret',
       description: 'Parametro de la secret manager para el AES',
       secretStringValue: cdk.SecretValue.unsafePlainText(aesKey),
+    });
+
+    // Outputs
+
+    // API Gateway
+
+    new cdk.CfnOutput(this, 'ApiTaskId', {
+      value: apiGatewayTask.restApiId,
+      exportName: 'ApiGatewayTaskId'
+    });
+
+    new cdk.CfnOutput(this, 'ApiTaskRootResourceId', {
+      value: apiGatewayTask.root.resourceId,
+      exportName: 'ApiTaskRootResourceId'
     });
 
   }

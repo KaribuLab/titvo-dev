@@ -78,4 +78,8 @@ function encrypt(text: string, key: string): string {
     const githubAccessToken = process.env.GITHUB_ACCESS_TOKEN as string
     console.log('Setting Github access token');
     await putItem('github_access_token', encrypt(githubAccessToken, aesKey));
+    const promptResponse = await fetch("https://raw.githubusercontent.com/KaribuLab/titvo-installer/refs/heads/main/prompt.md")
+    const prompt = await promptResponse.text()
+    console.log('Setting prompt');
+    await putItem('scan_system_prompt', prompt);
 })()
