@@ -16,6 +16,30 @@ services:
       - localstack
     networks:
       - localstack
+  mcp-gateway:
+    image: node:22.20-bookworm
+    env_file:
+      - .env.localstack
+    working_dir: /app
+    user: 1000:1000
+    command: yarn start:dev-install
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      CLOUD_PROVIDER: aws
+      AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
+      AWS_REGION: us-east-1
+      AWS_EVENTBUS_NAME: tvo-event-bus-local
+      AWS_QUEUE_URL: http://10.5.0.5:4566/000000000000/tvo-mcp-gateway-output-local
+      AWS_DYNAMODB_TABLE_NAME: tvo-mcp-jobs-local
+    volumes:
+      - ./src/mcp/gateway:/app
+    depends_on:
+      - localstack
+    networks:
+      - localstack
   git-commit-files:
     build: ./docker/lambda/node
     env_file:
