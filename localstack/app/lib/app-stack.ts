@@ -4,10 +4,9 @@ import { SqsQueue } from 'aws-cdk-lib/aws-events-targets';
 import { Queue } from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
-import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, GlobalSecondaryIndexProps, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
-import { MockIntegration, PassthroughBehavior, RestApi } from 'aws-cdk-lib/aws-apigateway';
 
 const basePath = '/tvo/security-scan/localstack/infra';
 const aesKey = process.env.AES_KEY ?? 'secret_key_aes';
@@ -15,49 +14,6 @@ const aesKey = process.env.AES_KEY ?? 'secret_key_aes';
 export class AppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
-
-    // API Gateway 
-  
-    // Task
-
-    const apiGatewayTask = new RestApi(this, 'ApiGatewayTask', {
-      restApiName: 'tvo-security-scan-api-local',
-      description: 'API Gateway for Security Scan',
-      deploy: true,
-      deployOptions: {
-        stageName: 'localstack',
-      },
-    });
-
-    const healthResource = apiGatewayTask.root.addResource('health');
-    healthResource.addMethod('GET', new MockIntegration({
-      integrationResponses: [
-        {
-          statusCode: '200',
-          responseParameters: {
-            'method.response.header.Content-Type': 'application/json',
-          },
-        },
-      ],
-      passthroughBehavior: PassthroughBehavior.WHEN_NO_MATCH,
-      requestTemplates: {
-        'application/json': JSON.stringify({
-          statusCode: 200,
-          body: JSON.stringify({
-            message: 'OK',
-          }),
-        }),
-      },
-    }),{
-      methodResponses: [
-        {
-          statusCode: '200',
-          responseParameters: {
-            'method.response.header.Content-Type': true,
-          },
-        },
-      ],
-    });
 
     // SQS
 
@@ -104,6 +60,14 @@ export class AppStack extends cdk.Stack {
       timeToLiveAttribute: 'ttl',
     });
 
+    // Security Scan Table
+
+    const dynamoDBScan = new Table(this, 'DynamoDBScan', {
+      tableName: 'tvo-security-scan-local',
+      partitionKey: { name: 'scan_id', type: AttributeType.STRING },
+      timeToLiveAttribute: 'ttl',
+    });
+
     // Parameter Table
 
     const dynamoDBParameter = new Table(this, 'DynamoDBParameter', {
@@ -123,7 +87,17 @@ export class AppStack extends cdk.Stack {
 
     const dynamoDBApiKey = new Table(this, 'DynamoDBApiKey', {
       tableName: 'tvo-api-key-local',
-      partitionKey: { name: 'api_key_id', type: AttributeType.STRING },
+      partitionKey: { name: 'key_id', type: AttributeType.STRING },
+    });
+
+    dynamoDBApiKey.addGlobalSecondaryIndex({
+      indexName: 'api_key_gsi',
+      partitionKey: { name: 'api_key', type: AttributeType.STRING },
+    });
+
+    dynamoDBApiKey.addGlobalSecondaryIndex({
+      indexName: 'user_id_gsi',
+      partitionKey: { name: 'user_id', type: AttributeType.STRING },
     });
 
     // Task CLI Files Table
@@ -375,6 +349,20 @@ export class AppStack extends cdk.Stack {
       description: 'Nombre de la tabla de MCP Git Commit Files'
     });
 
+    // Security Scan Table
+
+    new StringParameter(this, 'SSMParameterDynamoDBScanTableArn', {
+      parameterName: `${basePath}/dynamodb/scan/dynamodb_table_arn`,
+      stringValue: dynamoDBScan.tableArn,
+      description: 'ARN de la tabla de escaneos de seguridad'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoDBScanTableName', {
+      parameterName: `${basePath}/dynamodb/scan/dynamodb_table_name`,
+      stringValue: dynamoDBScan.tableName,
+      description: 'Nombre de la tabla de escaneos de seguridad'
+    });
+
     // Parameter Table
 
     new StringParameter(this, 'SSMParameterDynamoDBParameterTableArn', {
@@ -453,24 +441,13 @@ export class AppStack extends cdk.Stack {
 
     // AES Secret
 
+    // Convertir la clave a base64 para que sea compatible con aes.service.ts
+    const aesKeyBase64 = Buffer.from(aesKey, 'utf8').toString('base64');
+
     new Secret(this, 'SecretManagerParameter', {
       secretName: '/tvo/security-scan/localstack/aes_secret',
       description: 'Parametro de la secret manager para el AES',
-      secretStringValue: cdk.SecretValue.unsafePlainText(aesKey),
-    });
-
-    // Outputs
-
-    // API Gateway
-
-    new cdk.CfnOutput(this, 'ApiTaskId', {
-      value: apiGatewayTask.restApiId,
-      exportName: 'ApiGatewayTaskId'
-    });
-
-    new cdk.CfnOutput(this, 'ApiTaskRootResourceId', {
-      value: apiGatewayTask.root.resourceId,
-      exportName: 'ApiTaskRootResourceId'
+      secretStringValue: cdk.SecretValue.unsafePlainText(aesKeyBase64),
     });
 
   }
