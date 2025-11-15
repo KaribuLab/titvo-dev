@@ -10,6 +10,9 @@ services:
       BITBUCKET_CLIENT_ID: ${BITBUCKET_CLIENT_ID:-key_bitbucket}
       BITBUCKET_CLIENT_SECRET: ${BITBUCKET_CLIENT_SECRET:-secret_bitbucket}
       GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-token_github}
+      IA_PROVIDER: ${IA_PROVIDER:-openai}
+      IA_MODEL: ${IA_MODEL:-gpt-4o-mini}
+      IA_API_KEY: ${IA_API_KEY:-api_key_ia}
     volumes:
       - ./localstack/app:/app
     depends_on:
@@ -101,8 +104,15 @@ services:
     volumes:
       - ./src/agent:/app
       - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - localstack
+    networks:
+      - localstack
   trigger:
-    build: ./docker/lambda/node
+    build:
+      context: ./docker/lambda/node
+      args:
+        DOCKER_GID: ${DOCKER_GID:-999}
     env_file:
       - .env.localstack
     environment:
