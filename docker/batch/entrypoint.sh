@@ -2,13 +2,16 @@
 
 set -e
 
-build(){
-    echo "Building image titvo/agent"
-    exec "$@"
-}
+cwd=$(pwd)
 
-build
+cd /runner
+npm install
+npm run start &
+
+cd $cwd
+
+"$@"
 
 while inotifywait -e modify,create,delete .; do
-    build
+    "$@"
 done
