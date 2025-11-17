@@ -35,7 +35,7 @@ services:
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_REGION: us-east-1
       AWS_EVENTBUS_NAME: tvo-event-bus-local
-      AWS_QUEUE_URL: http://10.5.0.5:4566/000000000000/tvo-mcp-gateway-output-local
+      AWS_QUEUE_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566/000000000000/tvo-mcp-gateway-output-local
       AWS_DYNAMODB_TABLE_NAME: tvo-mcp-jobs-local
     volumes:
       - ./src/mcp/gateway:/app
