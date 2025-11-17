@@ -59,3 +59,8 @@ Debes seguir las siguientes reglas en el código de la función lambda:
 - [ ] Usar el patrón de diseño de responsabilidad única.
 - [ ] Usar el patrón de diseño de inversión de dependencias.
 - [ ] Usar el patrón de diseño de responsabilidad única.
+
+
+## Reglas generales
+
+- Siempre muestrame el plan de ejecución y luego me preguntas si quiero aplicar los cambios.
