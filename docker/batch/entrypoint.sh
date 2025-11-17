@@ -12,6 +12,7 @@ cd $cwd
 
 "$@"
 
-while inotifywait -e modify,create,delete .; do
+while inotifywait -r -e modify,create,delete,attrib .; do
+    echo "Change detected, rebuilding..."
     "$@"
 done
