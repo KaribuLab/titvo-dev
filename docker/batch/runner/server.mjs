@@ -31,9 +31,15 @@ app.post('/run-batch', async (req, res) => {
         console.log(`Removing container ${containerName}`)
         await docker.getContainer(container.Id).remove()
     }
+    const containerEnviromentVariables = environmentVariables;
+    containerEnviromentVariables.push('AWS_REGION=us-east-1')
+    containerEnviromentVariables.push('AWS_DEFAULT_REGION=us-east-1')
+    containerEnviromentVariables.push('AWS_ACCESS_KEY_ID=test')
+    containerEnviromentVariables.push('AWS_SECRET_ACCESS_KEY=test')
+    containerEnviromentVariables.push('AWS_ENDPOINT_URL=http://localstack:4566')
     const newContainer = await docker.createContainer({
         Image: imageName,
-        Env: environmentVariables,
+        Env: containerEnviromentVariables,
         name: containerName,
         HostConfig: {
             AutoRemove: false,
