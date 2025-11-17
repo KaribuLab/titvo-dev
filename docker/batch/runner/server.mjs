@@ -29,7 +29,9 @@ app.post('/run-batch', async (req, res) => {
     console.log(`Container ${containerName} found`)
     if (container !== null && container !== undefined) {
         console.log(`Removing container ${containerName}`)
-        await docker.getContainer(container.Id).remove()
+        await docker.getContainer(container.Id).remove({
+            force: true
+        })
     }
     const containerEnviromentVariables = environmentVariables;
     containerEnviromentVariables.push('AWS_REGION=us-east-1')
@@ -48,6 +50,15 @@ app.post('/run-batch', async (req, res) => {
     })
     await newContainer.start()
     console.log(`Running container ${containerName} with environment variables ${environmentVariables}`)
+    newContainer.logs({ follow: true, stdout: true, stderr: true }, (err, stream) => {
+        if (err) {
+            console.error(`Error getting logs for container ${containerName}: ${err}`)
+        } else {
+            stream.on('data', (data) => {
+                console.log(`${data}`)
+            })
+        }
+    })
     res.sendStatus(200)
 })
 
