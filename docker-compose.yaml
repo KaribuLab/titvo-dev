@@ -111,8 +111,6 @@ services:
   trigger:
     build:
       context: ./docker/lambda/node
-      args:
-        DOCKER_GID: ${DOCKER_GID:-999}
     env_file:
       - .env.localstack
     environment:
