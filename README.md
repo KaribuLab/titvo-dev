@@ -26,13 +26,18 @@ Este comando obtiene el nombre del grupo de logs de CloudWatch a partir del stac
 
 ### API Gateway URL
 
-Para obtener la URL del API Gateway de una función lambda específica, se puede usar el siguiente comando:
+Para obtener la URL del API Gateway de las funciones lambda que se exponen a través de API Gateway, se puede usar el siguiente comando:
 
 ```bash
 docker compose exec trigger api-gateway-url
 ```
 
-Este comando obtiene la URL del API Gateway a partir del stack de CDK (usando la variable `CDK_STACK_NAME`). El comando `api-gateway-url` está disponible en todos los contenedores lambda que tienen un API Gateway asociado.
+Las lambdas que se exponen a través de API Gateway son:
+
+- trigger
+- auth (pendiente de implementar)
+- setup (pendiente de implementar)
+- status (pendiente de implementar)
 
 ## API Gateway
 
@@ -42,10 +47,11 @@ Con las utilidades de la imagen de CDK, se puede obtener la URL base de la API G
 
 En el directorio `src/api/task/trigger` se el archivo `task.http` con las peticiones para el servicio de Task.
 
-Antes de ejecutar las peticiones, se debe setear en el archivo `.env` (que debe estar ubicado en el directorio `src/api/task/trigger`) la variable `API_URL` con la URL base de la API Gateway.
+Antes de ejecutar las peticiones, se debe setear en el archivo `.env` (que debe estar ubicado en el directorio `src/api/task/trigger`) las variables `API_URL` y `API_KEY` con la URL base de la API Gateway y la API Key del servicio de Task.
 
 ```bash
 API_URL=https://3i8adfasc1.execute-api.localhost.localstack.cloud:4566/localstack
+API_KEY=tvok-7dbdoc6jP8Br45rDlgUZ64JcubKaw5LHp82P3L7lsoh
 ```
 
 ## MCP Git Commit Files
