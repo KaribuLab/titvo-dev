@@ -52,7 +52,24 @@ Antes de ejecutar las peticiones, se debe setear en el archivo `.env` (que debe 
 ```bash
 API_URL=https://3i8adfasc1.execute-api.localhost.localstack.cloud:4566/localstack
 API_KEY=tvok-7dbdoc6jP8Br45rDlgUZ64JcubKaw5LHp82P3L7lsoh
+REPOSITORY_URL=https://github.com/pascencio/todo-app-next.git
 ```
+
+Otras variables que podrías utilizar dependiendo del tipo de tarea que quieras ejecutar:
+
+**Github:**
+- GITHUB_REPO_NAME
+- GITHUB_COMMIT_SHA
+- GITHUB_ASSIGNEE
+
+**Bitbucket:**
+- BITBUCKET_COMMIT
+- BITBUCKET_WORKSPACE
+- BITBUCKET_REPO_SLUG
+- BITBUCKET_PROJECT_KEY
+
+**CLI:**
+- BATCH_ID
 
 ## MCP Git Commit Files
 
