@@ -19,7 +19,7 @@ export class AppStack extends cdk.Stack {
 
     // Git Commit Files
 
-    const sqsInput = new Queue(this, 'InputQueueGitCommitFiles', {
+    const sqsInputGitCommitFiles = new Queue(this, 'InputQueueGitCommitFiles', {
       queueName: 'tvo-mcp-git-commit-files-input-local',
       visibilityTimeout: cdk.Duration.seconds(300),
     });
@@ -135,7 +135,7 @@ export class AppStack extends cdk.Stack {
       },
     });
 
-    ruleInput.addTarget(new SqsQueue(sqsInput));
+    ruleInput.addTarget(new SqsQueue(sqsInputGitCommitFiles));
 
     ruleOutput.addTarget(new SqsQueue(sqsOutput));
 
@@ -246,19 +246,19 @@ export class AppStack extends cdk.Stack {
 
     new StringParameter(this, 'SSMParameterInputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_arn`,
-      stringValue: sqsInput.queueArn,
+      stringValue: sqsInputGitCommitFiles.queueArn,
       description: 'ARN de la cola de entrada de MCP Git Commit Files'
     });
 
     new StringParameter(this, 'SSMParameterInputQueueName', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_name`,
-      stringValue: sqsInput.queueName,
+      stringValue: sqsInputGitCommitFiles.queueName,
       description: 'Nombre de la cola de entrada de MCP Git Commit Files'
     });
 
     new StringParameter(this, 'SSMParameterInputQueueUrl', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_url`,
-      stringValue: sqsInput.queueUrl,
+      stringValue: sqsInputGitCommitFiles.queueUrl,
       description: 'URL de la cola de entrada de MCP Git Commit Files'
     });
 
