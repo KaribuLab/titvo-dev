@@ -227,6 +227,12 @@ export class AppStack extends cdk.Stack {
       blockPublicAccess: cdk.aws_s3.BlockPublicAccess.BLOCK_ACLS_ONLY,
     });
 
+    // Bucket de archivos de commit de Git
+    const s3GitCommitFiles = new Bucket(this, 'S3GitCommitFiles', {
+      bucketName: 'tvo-mcp-git-commit-files-input-local',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     // Parametro de infraestructura
 
     // Gateway Output Queue
@@ -435,6 +441,18 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/s3/report/website_url`,
       stringValue: s3Report.bucketWebsiteUrl,
       description: 'URL del sitio web de reportes de seguridad'
+    });
+
+    new StringParameter(this, 'SSMParameterS3GitCommitFilesBucketArn', {
+      parameterName: `${basePath}/s3/git-commit-files/bucket_arn`,
+      stringValue: s3GitCommitFiles.bucketArn,
+      description: 'ARN del bucket de archivos de commit de Git'
+    });
+
+    new StringParameter(this, 'SSMParameterS3GitCommitFilesBucketName', {
+      parameterName: `${basePath}/s3/git-commit-files/bucket_name`,
+      stringValue: s3GitCommitFiles.bucketName,
+      description: 'Nombre del bucket de archivos de commit de Git'
     });
 
     // Secret Manager
