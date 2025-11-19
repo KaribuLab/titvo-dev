@@ -1,0 +1,5 @@
+cwd=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+alias lambda='bash_lambda.sh'
+alias tvo='bash_tvo.sh'
+export TITVO_DEV_ROOT=$(cd "$cwd/.." && pwd)
+export PATH=$cwd:$PATH
