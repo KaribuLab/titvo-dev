@@ -33,10 +33,11 @@ services:
       CLOUD_PROVIDER: aws
       AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
-      AWS_REGION: us-east-1
-      AWS_EVENTBUS_NAME: tvo-event-bus-local
+      AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_QUEUE_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566/000000000000/tvo-mcp-gateway-output-local
-      AWS_DYNAMODB_TABLE_NAME: tvo-mcp-jobs-local
+      AWS_EVENTBUS_NAME: ${AWS_EVENTBUS_NAME:-tvo-event-bus-local}
+      AWS_DYNAMODB_TABLE_NAME: ${AWS_DYNAMODB_TABLE_NAME:-tvo-mcp-jobs-local}
+      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-tvo-mcp-git-commit-files-input-local}
     volumes:
       - ./src/mcp/gateway:/app
     depends_on:
