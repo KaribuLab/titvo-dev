@@ -148,7 +148,7 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
 {
   "job_id": "1234567890",
   "data": {
-    "report_url": "https://example.com/reports/1234567890.html",
+    "report_u_r_l": "https://example.com/reports/1234567890.html",
     "workspace_id": "karibu-cl",
     "commit_hash": "1535092799115cc465e091fb2f06473e41ed88c5",
     "repo_slug": "krb-web-ui-vulnerable",
