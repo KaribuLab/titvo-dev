@@ -131,7 +131,7 @@ function encrypt(text: string, key: string): string {
         console.log('Setting Bitbucket client credentials');
         await configurationPutItem('bitbucket_client_credentials', encrypt(JSON.stringify(bitbucketClientCredentials), aesKey));
         const githubAccessToken = process.env.GITHUB_ACCESS_TOKEN as string
-        console.log('Setting Github access token');
+        console.log(`Setting Github access token: ${githubAccessToken.substring(0, 20)}...`);
         await configurationPutItem('github_access_token', encrypt(githubAccessToken, aesKey));
         const promptResponse = await fetch("https://raw.githubusercontent.com/KaribuLab/titvo-installer/refs/heads/main/system_prompt.md")
         const prompt = await promptResponse.text()
