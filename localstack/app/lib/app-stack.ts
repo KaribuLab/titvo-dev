@@ -107,6 +107,26 @@ export class AppStack extends cdk.Stack {
       partitionKey: { name: 'task_cli_file_id', type: AttributeType.STRING },
     });
 
+    const dynamoDBRepository = new Table(this, 'DynamoDBRepository', {
+      tableName: 'tvo-repository-local',
+      partitionKey: { name: 'repository_id', type: AttributeType.STRING },
+    });
+
+    const dynamoDBPrompt = new Table(this, 'DynamoDBPrompt', {
+      tableName: 'tvo-prompt-local',
+      partitionKey: { name: 'prompt_id', type: AttributeType.STRING },
+    });
+
+    const dynamoDBSession = new Table(this, 'DynamoDBSession', {
+      tableName: 'tvo-session-local',
+      partitionKey: { name: 'session_id', type: AttributeType.STRING },
+    });
+
+    const dynamoDBUser = new Table(this, 'DynamoDBUser', {
+      tableName: 'tvo-user-local',
+      partitionKey: { name: 'user_id', type: AttributeType.STRING },
+    });
+
     // EventBus
 
     const eventBus = new EventBus(this, 'EventBus', {
@@ -233,226 +253,377 @@ export class AppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Parametro de infraestructura
+    const s3CliFiles = new Bucket(this, 'S3CliFiles', {
+      bucketName: 'tvo-cli-files-local',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
-    // Gateway Output Queue
-    new StringParameter(this, 'SSMParameterOutputQueueArn', {
+    const secretBitbucket = new Secret(this, 'SecretBitbucket', {
+      secretName: '/tvo/mcp/localstack/bitbucket_credentials',
+      description: 'Secret local de credenciales de Bitbucket',
+      secretStringValue: cdk.SecretValue.unsafePlainText('{"username":"local","appPassword":"local"}'),
+    });
+
+    const secretGithub = new Secret(this, 'SecretGithub', {
+      secretName: '/tvo/mcp/localstack/github_token',
+      description: 'Secret local de token de GitHub',
+      secretStringValue: cdk.SecretValue.unsafePlainText('{"token":"local"}'),
+    });
+
+    // Parametros de infraestructura
+
+    // SQS
+    new StringParameter(this, 'SSMParameterGatewayOutputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/gateway/output/queue_arn`,
       stringValue: sqsOutput.queueArn,
       description: 'ARN de la cola de salida de MCP Gateway'
     });
 
-    new StringParameter(this, 'SSMParameterOutputQueueName', {
+    new StringParameter(this, 'SSMParameterGatewayOutputQueueName', {
       parameterName: `${basePath}/sqs/mcp/gateway/output/queue_name`,
       stringValue: sqsOutput.queueName,
       description: 'Nombre de la cola de salida de MCP Gateway'
     });
 
-    // Git Commit Files
+    new StringParameter(this, 'SSMParameterGatewayOutputQueueUrl', {
+      parameterName: `${basePath}/sqs/mcp/gateway/output/queue_url`,
+      stringValue: sqsOutput.queueUrl,
+      description: 'URL de la cola de salida de MCP Gateway'
+    });
 
-    new StringParameter(this, 'SSMParameterInputQueueArn', {
+    new StringParameter(this, 'SSMParameterGitCommitFilesInputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_arn`,
       stringValue: sqsInputGitCommitFiles.queueArn,
       description: 'ARN de la cola de entrada de MCP Git Commit Files'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueName', {
+    new StringParameter(this, 'SSMParameterGitCommitFilesInputQueueName', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_name`,
       stringValue: sqsInputGitCommitFiles.queueName,
       description: 'Nombre de la cola de entrada de MCP Git Commit Files'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueUrl', {
+    new StringParameter(this, 'SSMParameterGitCommitFilesInputQueueUrl', {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_url`,
       stringValue: sqsInputGitCommitFiles.queueUrl,
       description: 'URL de la cola de entrada de MCP Git Commit Files'
     });
 
-    // Issue Report
-
-    new StringParameter(this, 'SSMParameterInputQueueIssueReportArn', {
+    new StringParameter(this, 'SSMParameterIssueReportInputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_arn`,
       stringValue: sqsInputIssueReport.queueArn,
       description: 'ARN de la cola de entrada de MCP Issue Report'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueIssueReportName', {
+    new StringParameter(this, 'SSMParameterIssueReportInputQueueName', {
       parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_name`,
       stringValue: sqsInputIssueReport.queueName,
       description: 'Nombre de la cola de entrada de MCP Issue Report'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueIssueReportUrl', {
+    new StringParameter(this, 'SSMParameterIssueReportInputQueueUrl', {
       parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_url`,
       stringValue: sqsInputIssueReport.queueUrl,
       description: 'URL de la cola de entrada de MCP Issue Report'
     });
 
-    // Bitbucket Code Insights
-
-    new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsArn', {
+    new StringParameter(this, 'SSMParameterBitbucketCodeInsightsInputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_arn`,
       stringValue: sqsInputBitbucketCodeInsights.queueArn,
       description: 'ARN de la cola de entrada de MCP Bitbucket Code Insights'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsName', {
+    new StringParameter(this, 'SSMParameterBitbucketCodeInsightsInputQueueName', {
       parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_name`,
       stringValue: sqsInputBitbucketCodeInsights.queueName,
       description: 'Nombre de la cola de entrada de MCP Bitbucket Code Insights'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueBitbucketCodeInsightsUrl', {
+    new StringParameter(this, 'SSMParameterBitbucketCodeInsightsInputQueueUrl', {
       parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_url`,
       stringValue: sqsInputBitbucketCodeInsights.queueUrl,
       description: 'URL de la cola de entrada de MCP Bitbucket Code Insights'
     });
 
-    // Github Issue
-    new StringParameter(this, 'SSMParameterInputQueueGithubIssueArn', {
+    new StringParameter(this, 'SSMParameterGithubIssueInputQueueArn', {
       parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_arn`,
       stringValue: sqsInputGithubIssue.queueArn,
       description: 'ARN de la cola de entrada de MCP Github Issue'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueGithubIssueName', {
+    new StringParameter(this, 'SSMParameterGithubIssueInputQueueName', {
       parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_name`,
       stringValue: sqsInputGithubIssue.queueName,
       description: 'Nombre de la cola de entrada de MCP Github Issue'
     });
 
-    new StringParameter(this, 'SSMParameterInputQueueGithubIssueUrl', {
+    new StringParameter(this, 'SSMParameterGithubIssueInputQueueUrl', {
       parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_url`,
       stringValue: sqsInputGithubIssue.queueUrl,
       description: 'URL de la cola de entrada de MCP Github Issue'
     });
 
-    // EventBus
+    // Infra base
+    new StringParameter(this, 'SSMParameterEcsClusterName', {
+      parameterName: `${basePath}/ecs/cluster_name`,
+      stringValue: 'tvo-mcp-cluster-local',
+      description: 'Nombre del cluster ECS'
+    });
+
+    new StringParameter(this, 'SSMParameterVpcPrivateSubnets', {
+      parameterName: `${basePath}/vpc/subnet/private/subnets_id`,
+      stringValue: '["subnet-local-1","subnet-local-2","subnet-local-3"]',
+      description: 'IDs de subnets privadas'
+    });
+
+    new StringParameter(this, 'SSMParameterVpcPrivateRouteTables', {
+      parameterName: `${basePath}/vpc/subnet/private/routes_table_id`,
+      stringValue: '["rtb-local-1"]',
+      description: 'IDs de route table privadas'
+    });
+
+    new StringParameter(this, 'SSMParameterVpcId', {
+      parameterName: `${basePath}/vpc/vpc_id`,
+      stringValue: 'vpc-local-1',
+      description: 'ID de VPC'
+    });
+
+    new StringParameter(this, 'SSMParameterVpcSecurityGroup', {
+      parameterName: `${basePath}/vpc/security-group/security_group_id`,
+      stringValue: 'sg-local-1',
+      description: 'ID de security group'
+    });
+
+    new StringParameter(this, 'SSMParameterCloudmapId', {
+      parameterName: `${basePath}/cloudmap/cloudmap_id`,
+      stringValue: 'ns-local-1',
+      description: 'ID de CloudMap'
+    });
+
+    new StringParameter(this, 'SSMParameterCloudmapArn', {
+      parameterName: `${basePath}/cloudmap/cloudmap_arn`,
+      stringValue: 'arn:aws:servicediscovery:us-east-1:000000000000:namespace/ns-local-1',
+      description: 'ARN de CloudMap'
+    });
 
     new StringParameter(this, 'SSMParameterEventBusArn', {
       parameterName: `${basePath}/eventbridge/eventbus_arn`,
       stringValue: eventBus.eventBusArn,
-      description: 'ARN del bus de eventos de MCP Git Commit Files'
+      description: 'ARN del bus de eventos'
     });
 
     new StringParameter(this, 'SSMParameterEventBusName', {
       parameterName: `${basePath}/eventbridge/eventbus_name`,
       stringValue: eventBus.eventBusName,
-      description: 'Nombre del bus de eventos de MCP Git Commit Files'
-    });
-
-    // Task Table
-
-    new StringParameter(this, 'SSMParameterDynamoDBTableArn', {
-      parameterName: `${basePath}/dynamodb/process/dynamodb_table_arn`,
-      stringValue: dynamoDB.tableArn,
-      description: 'ARN de la tabla de MCP Git Commit Files'
-    });
-
-    new StringParameter(this, 'SSMParameterDynamoDBTableName', {
-      parameterName: `${basePath}/dynamodb/process/dynamodb_table_name`,
-      stringValue: dynamoDB.tableName,
-      description: 'Nombre de la tabla de MCP Git Commit Files'
-    });
-
-    // Security Scan Table
-
-    new StringParameter(this, 'SSMParameterDynamoDBScanTableArn', {
-      parameterName: `${basePath}/dynamodb/scan/dynamodb_table_arn`,
-      stringValue: dynamoDBScan.tableArn,
-      description: 'ARN de la tabla de escaneos de seguridad'
-    });
-
-    new StringParameter(this, 'SSMParameterDynamoDBScanTableName', {
-      parameterName: `${basePath}/dynamodb/scan/dynamodb_table_name`,
-      stringValue: dynamoDBScan.tableName,
-      description: 'Nombre de la tabla de escaneos de seguridad'
-    });
-
-    // Parameter Table
-
-    new StringParameter(this, 'SSMParameterDynamoDBParameterTableArn', {
-      parameterName: `${basePath}/dynamodb/parameter/dynamodb_table_arn`,
-      stringValue: dynamoDBParameter.tableArn,
-      description: 'ARN de la tabla de parametros de configuracion'
-    });
-
-    new StringParameter(this, 'SSMParameterDynamoDBParameterTableName', {
-      parameterName: `${basePath}/dynamodb/parameter/dynamodb_table_name`,
-      stringValue: dynamoDBParameter.tableName,
-      description: 'Nombre de la tabla de parametros de configuracion'
-    });
-
-    // Jobs Table
-
-    new StringParameter(this, 'SSMParameterDynamoDBJobsTableArn', {
-      parameterName: `${basePath}/dynamodb/jobs/dynamodb_table_arn`,
-      stringValue: dynamoDBJobs.tableArn,
-      description: 'ARN de la tabla de jobs del gateway MCP'
-    });
-
-    new StringParameter(this, 'SSMParameterDynamoDBJobsTableName', {
-      parameterName: `${basePath}/dynamodb/jobs/dynamodb_table_name`,
-      stringValue: dynamoDBJobs.tableName,
-      description: 'Nombre de la tabla de jobs del gateway MCP'
-    });
-    
-    // API Key Table
-    new StringParameter(this, 'SSMParameterDynamoDBApiKeyTableArn', {
-      parameterName: `${basePath}/dynamodb/api-key/dynamodb_table_arn`,
-      stringValue: dynamoDBApiKey.tableArn,
-      description: 'ARN de la tabla de API Key'
-    });
-
-    new StringParameter(this, 'SSMParameterDynamoDBApiKeyTableName', {
-      parameterName: `${basePath}/dynamodb/api-key/dynamodb_table_name`,
-      stringValue: dynamoDBApiKey.tableName,
-      description: 'Nombre de la tabla de API Key'
-    });
-
-    // Task CLI Files Table
-    new StringParameter(this, 'SSMParameterDynamoDBTaskCliFilesTableArn', {
-      parameterName: `${basePath}/dynamodb/task-cli-files/dynamodb_table_arn`,
-      stringValue: dynamoDBTaskCliFiles.tableArn,
-      description: 'ARN de la tabla de Task CLI Files'
-    });
-
-    new StringParameter(this, 'SSMParameterDynamoDBTaskCliFilesTableName', {
-      parameterName: `${basePath}/dynamodb/task-cli-files/dynamodb_table_name`,
-      stringValue: dynamoDBTaskCliFiles.tableName,
-      description: 'Nombre de la tabla de Task CLI Files'
+      description: 'Nombre del bus de eventos'
     });
 
     // S3
+    new StringParameter(this, 'SSMParameterS3CliFilesBucketArn', {
+      parameterName: `${basePath}/s3/cli-files/bucket_arn`,
+      stringValue: s3CliFiles.bucketArn,
+      description: 'ARN del bucket de CLI files'
+    });
 
-    new StringParameter(this, 'SSMParameterS3ReportBucketArn', {
-      parameterName: `${basePath}/s3/report/bucket_arn`,
+    new StringParameter(this, 'SSMParameterS3CliFilesBucketName', {
+      parameterName: `${basePath}/s3/cli-files/bucket_name`,
+      stringValue: s3CliFiles.bucketName,
+      description: 'Nombre del bucket de CLI files'
+    });
+
+    new StringParameter(this, 'SSMParameterS3ReportsBucketArn', {
+      parameterName: `${basePath}/s3/reports/bucket_arn`,
       stringValue: s3Report.bucketArn,
-      description: 'ARN del bucket de reportes de seguridad'
+      description: 'ARN del bucket de reportes'
     });
 
-    new StringParameter(this, 'SSMParameterS3ReportBucketName', {
-      parameterName: `${basePath}/s3/report/bucket_name`,
+    new StringParameter(this, 'SSMParameterS3ReportsBucketName', {
+      parameterName: `${basePath}/s3/reports/bucket_name`,
       stringValue: s3Report.bucketName,
-      description: 'Nombre del bucket de reportes de seguridad'
+      description: 'Nombre del bucket de reportes'
     });
 
-    new StringParameter(this, 'SSMParameterS3ReportWebsiteUrl', {
-      parameterName: `${basePath}/s3/report/website_url`,
+    new StringParameter(this, 'SSMParameterS3ReportsWebsiteUrl', {
+      parameterName: `${basePath}/s3/reports/bucket_website_url`,
       stringValue: s3Report.bucketWebsiteUrl,
-      description: 'URL del sitio web de reportes de seguridad'
+      description: 'URL del sitio web de reportes'
     });
 
     new StringParameter(this, 'SSMParameterS3GitCommitFilesBucketArn', {
       parameterName: `${basePath}/s3/git-commit-files/bucket_arn`,
       stringValue: s3GitCommitFiles.bucketArn,
-      description: 'ARN del bucket de archivos de commit de Git'
+      description: 'ARN del bucket de git-commit-files'
     });
 
     new StringParameter(this, 'SSMParameterS3GitCommitFilesBucketName', {
       parameterName: `${basePath}/s3/git-commit-files/bucket_name`,
       stringValue: s3GitCommitFiles.bucketName,
-      description: 'Nombre del bucket de archivos de commit de Git'
+      description: 'Nombre del bucket de git-commit-files'
+    });
+
+    // Dynamo
+    new StringParameter(this, 'SSMParameterDynamoApikeyTableArn', {
+      parameterName: `${basePath}/dynamo/apikey-table-arn`,
+      stringValue: dynamoDBApiKey.tableArn,
+      description: 'ARN de la tabla DynamoDB apikey'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoApikeyTableName', {
+      parameterName: `${basePath}/dynamo/apikey-table-name`,
+      stringValue: dynamoDBApiKey.tableName,
+      description: 'Nombre de la tabla DynamoDB apikey'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoCliFilesTableArn', {
+      parameterName: `${basePath}/dynamo/cli-files-table-arn`,
+      stringValue: dynamoDBTaskCliFiles.tableArn,
+      description: 'ARN de la tabla DynamoDB cli-files'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoCliFilesTableName', {
+      parameterName: `${basePath}/dynamo/cli-files-table-name`,
+      stringValue: dynamoDBTaskCliFiles.tableName,
+      description: 'Nombre de la tabla DynamoDB cli-files'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoJobsTableArn', {
+      parameterName: `${basePath}/dynamo/jobs-table-arn`,
+      stringValue: dynamoDBJobs.tableArn,
+      description: 'ARN de la tabla DynamoDB jobs'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoJobsTableName', {
+      parameterName: `${basePath}/dynamo/jobs-table-name`,
+      stringValue: dynamoDBJobs.tableName,
+      description: 'Nombre de la tabla DynamoDB jobs'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoParameterTableArn', {
+      parameterName: `${basePath}/dynamo/parameter-table-arn`,
+      stringValue: dynamoDBParameter.tableArn,
+      description: 'ARN de la tabla DynamoDB parameter'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoParameterTableName', {
+      parameterName: `${basePath}/dynamo/parameter-table-name`,
+      stringValue: dynamoDBParameter.tableName,
+      description: 'Nombre de la tabla DynamoDB parameter'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoPromptTableArn', {
+      parameterName: `${basePath}/dynamo/prompt-table-arn`,
+      stringValue: dynamoDBPrompt.tableArn,
+      description: 'ARN de la tabla DynamoDB prompt'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoPromptTableName', {
+      parameterName: `${basePath}/dynamo/prompt-table-name`,
+      stringValue: dynamoDBPrompt.tableName,
+      description: 'Nombre de la tabla DynamoDB prompt'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoRepositoryTableArn', {
+      parameterName: `${basePath}/dynamo/repository-table-arn`,
+      stringValue: dynamoDBRepository.tableArn,
+      description: 'ARN de la tabla DynamoDB repository'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoRepositoryTableName', {
+      parameterName: `${basePath}/dynamo/repository-table-name`,
+      stringValue: dynamoDBRepository.tableName,
+      description: 'Nombre de la tabla DynamoDB repository'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoScanTableArn', {
+      parameterName: `${basePath}/dynamo/scan-table-arn`,
+      stringValue: dynamoDBScan.tableArn,
+      description: 'ARN de la tabla DynamoDB scan'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoScanTableName', {
+      parameterName: `${basePath}/dynamo/scan-table-name`,
+      stringValue: dynamoDBScan.tableName,
+      description: 'Nombre de la tabla DynamoDB scan'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoSessionTableArn', {
+      parameterName: `${basePath}/dynamo/session-table-arn`,
+      stringValue: dynamoDBSession.tableArn,
+      description: 'ARN de la tabla DynamoDB session'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoSessionTableName', {
+      parameterName: `${basePath}/dynamo/session-table-name`,
+      stringValue: dynamoDBSession.tableName,
+      description: 'Nombre de la tabla DynamoDB session'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoTaskTableArn', {
+      parameterName: `${basePath}/dynamo/task-table-arn`,
+      stringValue: dynamoDB.tableArn,
+      description: 'ARN de la tabla DynamoDB task'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoTaskTableName', {
+      parameterName: `${basePath}/dynamo/task-table-name`,
+      stringValue: dynamoDB.tableName,
+      description: 'Nombre de la tabla DynamoDB task'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoUserTableArn', {
+      parameterName: `${basePath}/dynamo/user-table-arn`,
+      stringValue: dynamoDBUser.tableArn,
+      description: 'ARN de la tabla DynamoDB user'
+    });
+
+    new StringParameter(this, 'SSMParameterDynamoUserTableName', {
+      parameterName: `${basePath}/dynamo/user-table-name`,
+      stringValue: dynamoDBUser.tableName,
+      description: 'Nombre de la tabla DynamoDB user'
+    });
+
+    // API Gateway
+    new StringParameter(this, 'SSMParameterApiGatewayTaskId', {
+      parameterName: `${basePath}/apigateway/task/api_gateway_id`,
+      stringValue: 'api-gateway-task-id-local',
+      description: 'ID de API Gateway de task'
+    });
+
+    // Parametros auxiliares usados por agentes
+    new StringParameter(this, 'SSMParameterAgentArn', {
+      parameterName: `${basePath}/agent-arn`,
+      stringValue: 'arn:aws:batch:us-east-1:000000000000:job-definition/tvo-security-scan-batch-local',
+      description: 'ARN del job definition del agente'
+    });
+
+    new StringParameter(this, 'SSMParameterAgentJobQueueArn', {
+      parameterName: `${basePath}/agent-job-queue-arn`,
+      stringValue: 'arn:aws:batch:us-east-1:000000000000:job-queue/tvo-security-scan-job-queue-local',
+      description: 'ARN del job queue del agente'
+    });
+
+    new StringParameter(this, 'SSMParameterEncryptionKeyName', {
+      parameterName: `${basePath}/encryption-key-name`,
+      stringValue: '/tvo/security-scan/localstack/infra/encryption-key',
+      description: 'Nombre de secret para clave de encriptacion'
+    });
+
+    new StringParameter(this, 'SSMParameterSecretManagerArn', {
+      parameterName: `${basePath}/secret-manager-arn`,
+      stringValue: 'arn:aws:secretsmanager:us-east-1:000000000000:secret:/tvo/security-scan/localstack',
+      description: 'ARN base para acceso a Secrets Manager'
+    });
+
+    new StringParameter(this, 'SSMParameterSecretBitbucketArn', {
+      parameterName: `${basePath}/secrets/bitbucket/secret_arn`,
+      stringValue: secretBitbucket.secretArn,
+      description: 'ARN del secret de Bitbucket'
+    });
+
+    new StringParameter(this, 'SSMParameterSecretGithubArn', {
+      parameterName: `${basePath}/secrets/github/secret_arn`,
+      stringValue: secretGithub.secretArn,
+      description: 'ARN del secret de GitHub'
     });
 
     // Secret Manager
