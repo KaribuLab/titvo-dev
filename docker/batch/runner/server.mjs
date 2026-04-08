@@ -60,6 +60,19 @@ app.post('/run-batch', async (req, res) => {
         }
     })
     res.sendStatus(200)
+    res.send({
+        jobId: newContainer.id,
+    })
+})
+
+app.post('/get-job-status', async (req, res) => {
+    const { jobId } = req.body
+    console.log(`Getting job status for job ${jobId}`)
+    const job = await docker.getContainer(jobId)
+    const status = await job.inspect()
+    res.send({
+        status: status.State.Status
+    })
 })
 
 app.listen(port, '0.0.0.0', () => {
