@@ -1,5 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { SecretsManagerClient, CreateSecretCommand, UpdateSecretCommand, DescribeSecretCommand } from '@aws-sdk/client-secrets-manager';
 import { randomBytes, createHash, createCipheriv, randomUUID } from 'crypto';
 
 const configurationTableName = 'tvo-parameter-configuration-local';
@@ -19,6 +20,41 @@ const client = new DynamoDBClient({
 
 // Crear un document client para operaciones más simples
 const docClient = DynamoDBDocumentClient.from(client);
+
+const awsRegion = process.env.AWS_DEFAULT_REGION ?? 'us-east-1';
+const encryptionKeyName = '/tvo/security-scan/localstack/infra/encryption-key';
+
+// Cliente de Secrets Manager
+const secretsClient = new SecretsManagerClient({
+    endpoint: process.env.AWS_ENDPOINT_URL ?? 'http://localstack:4566',
+    region: awsRegion,
+});
+
+async function setupEncryptionKey(): Promise<void> {
+    // Convertir la clave AES a base64 para que sea compatible con el servicio Python
+    const aesKeyBase64 = Buffer.from(aesKey, 'utf8').toString('base64');
+    
+    try {
+        // Intentar describir el secreto para ver si existe
+        await secretsClient.send(new DescribeSecretCommand({
+            SecretId: encryptionKeyName
+        }));
+        // Si existe, actualizarlo
+        console.log('Updating encryption key in Secrets Manager');
+        await secretsClient.send(new UpdateSecretCommand({
+            SecretId: encryptionKeyName,
+            SecretString: aesKeyBase64
+        }));
+    } catch (error) {
+        // Si no existe, crearlo
+        console.log('Creating encryption key in Secrets Manager');
+        await secretsClient.send(new CreateSecretCommand({
+            Name: encryptionKeyName,
+            SecretString: aesKeyBase64,
+            Description: 'Encryption key for Titvo security scan'
+        }));
+    }
+}
 
 
 const apiKeyPrefix = 'tvok';
@@ -122,6 +158,9 @@ function encrypt(text: string, key: string): string {
 
 (async () => {
     try {
+        // Configurar la clave de encriptación en Secrets Manager
+        await setupEncryptionKey();
+        
         const bitbucketClientId = process.env.BITBUCKET_CLIENT_ID as string
         const bitbucketClientSecret = process.env.BITBUCKET_CLIENT_SECRET as string
         const bitbucketClientCredentials: Record<string, string> = {
@@ -143,12 +182,12 @@ function encrypt(text: string, key: string): string {
         await configurationPutItem('scan_system_prompt', prompt);
         console.log(`Setting content template: ${contentTemplate}`);
         await configurationPutItem('content_template', contentTemplate);
-        console.log(`Setting ia provider: ${iaProvider}`);
-        await configurationPutItem('ia_provider', iaProvider);
-        console.log(`Setting ia model: ${iaModel}`);
-        await configurationPutItem('ia_model', iaModel);
-        console.log(`Setting ia api key: ${iaAPIKey.substring(0, 10)}...`);
-        await configurationPutItem('ia_api_key', encrypt(iaAPIKey, aesKey));
+        console.log(`Setting ai provider: ${iaProvider}`);
+        await configurationPutItem('ai_provider', iaProvider);
+        console.log(`Setting ai model: ${iaModel}`);
+        await configurationPutItem('ai_model', iaModel);
+        console.log(`Setting ai api key: ${iaAPIKey.substring(0, 10)}...`);
+        await configurationPutItem('ai_api_key', encrypt(iaAPIKey, aesKey));
         await configurationPutItem('security-scan-job-queue', 'tvo-security-scan-job-queue-local');
         await configurationPutItem('security-scan-job-definition', 'tvo-security-scan-job-definition-local');
         console.log('Getting user api key');
