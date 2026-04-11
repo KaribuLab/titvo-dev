@@ -59,8 +59,7 @@ app.post('/run-batch', async (req, res) => {
             })
         }
     })
-    res.sendStatus(200)
-    res.send({
+    res.status(200).json({
         jobId: newContainer.id,
     })
 })
