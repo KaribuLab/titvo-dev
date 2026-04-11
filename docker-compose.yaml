@@ -34,7 +34,7 @@ services:
       AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_QUEUE_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566/000000000000/tvo-mcp-gateway-output-local
+      AWS_QUEUE_URL: http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/tvo-mcp-gateway-output-local
       AWS_EVENTBUS_NAME: ${AWS_EVENTBUS_NAME:-tvo-event-bus-local}
       AWS_DYNAMODB_TABLE_NAME: ${AWS_DYNAMODB_TABLE_NAME:-tvo-mcp-jobs-local}
       AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-tvo-mcp-git-commit-files-input-local}
@@ -44,6 +44,8 @@ services:
       - localstack
     networks:
       - localstack
+    extra_hosts:
+      - "sqs.us-east-1.localhost.localstack.cloud:${DOCKER_LOCALSTACK_IP:-10.5.0.5}"
   git-commit-files:
     build: ./docker/lambda/node
     env_file:
@@ -132,6 +134,8 @@ services:
     volumes:
       - localstack:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      ACTIVATE_PRO: "0"
     networks:
       localstack:
         ipv4_address: ${DOCKER_LOCALSTACK_IP:-10.5.0.5}
