@@ -2,6 +2,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, CreateSecretCommand, UpdateSecretCommand, DescribeSecretCommand } from '@aws-sdk/client-secrets-manager';
 import { randomBytes, createHash, createCipheriv, randomUUID } from 'crypto';
+import * as path from 'node:path';
+import * as fs from 'fs';
 
 const configurationTableName = 'tvo-parameter-configuration-local';
 const apiKeyTableName = 'tvo-api-key-local';
@@ -33,7 +35,7 @@ const secretsClient = new SecretsManagerClient({
 async function setupEncryptionKey(): Promise<void> {
     // Convertir la clave AES a base64 para que sea compatible con el servicio Python
     const aesKeyBase64 = Buffer.from(aesKey, 'utf8').toString('base64');
-    
+
     try {
         // Intentar describir el secreto para ver si existe
         await secretsClient.send(new DescribeSecretCommand({
@@ -160,27 +162,20 @@ function encrypt(text: string, key: string): string {
     try {
         // Configurar la clave de encriptación en Secrets Manager
         await setupEncryptionKey();
-        
-        const bitbucketClientId = process.env.BITBUCKET_CLIENT_ID as string
-        const bitbucketClientSecret = process.env.BITBUCKET_CLIENT_SECRET as string
-        const bitbucketClientCredentials: Record<string, string> = {
-            key: bitbucketClientId,
-            secret: bitbucketClientSecret
-        }
-        console.log('Setting Bitbucket client credentials');
-        await configurationPutItem('bitbucket_client_credentials', encrypt(JSON.stringify(bitbucketClientCredentials), aesKey));
+
+        const bitbucketApiToken = process.env.BITBUCKET_API_TOKEN as string
+        console.log('Setting Bitbucket api token');
+        await configurationPutItem('bitbucket_api_token', encrypt(bitbucketApiToken, aesKey));
         const githubAccessToken = process.env.GITHUB_ACCESS_TOKEN as string
         console.log(`Setting Github access token: ${githubAccessToken.substring(0, 20)}...`);
         await configurationPutItem('github_access_token', encrypt(githubAccessToken, aesKey));
-        const promptResponse = await fetch("https://raw.githubusercontent.com/KaribuLab/titvo-installer/refs/heads/main/system_prompt.md")
-        const prompt = await promptResponse.text()
-        const contentTemplateResponse = await fetch("https://raw.githubusercontent.com/KaribuLab/titvo-installer/refs/heads/main/content_template.md")
-        const contentTemplate = await contentTemplateResponse.text()
+        const prompt = fs.readFileSync(path.join(__dirname, 'prompts', 'system_prompt.md'), 'utf8')
+        const contentTemplate = fs.readFileSync(path.join(__dirname, 'prompts', 'content_template.md'), 'utf8')
         console.log(`Setting mcp server url: ${mcpServerURL}`);
         await configurationPutItem('mcp_server_url', mcpServerURL);
-        console.log(`Setting system prompt: ${prompt}`);
+        console.log(`Setting system prompt: ${prompt.substring(0, 100)}...`);
         await configurationPutItem('scan_system_prompt', prompt);
-        console.log(`Setting content template: ${contentTemplate}`);
+        console.log(`Setting content template: ${contentTemplate.substring(0, 100)}...`);
         await configurationPutItem('content_template', contentTemplate);
         console.log(`Setting ai provider: ${iaProvider}`);
         await configurationPutItem('ai_provider', iaProvider);
@@ -188,6 +183,17 @@ function encrypt(text: string, key: string): string {
         await configurationPutItem('ai_model', iaModel);
         console.log(`Setting ai api key: ${iaAPIKey.substring(0, 10)}...`);
         await configurationPutItem('ai_api_key', encrypt(iaAPIKey, aesKey));
+        const langfusePublicKey = process.env.LANGFUSE_PUBLIC_KEY as string
+        const langfuseSecretKey = process.env.LANGFUSE_SECRET_KEY as string
+        const langfuseBaseURL = process.env.LANGFUSE_BASE_URL as string
+        if (langfusePublicKey && langfuseSecretKey && langfuseBaseURL) {
+            console.log(`Setting langfuse credentials public key: ${langfusePublicKey.substring(0, 10)}...`);
+            console.log(`Setting langfuse credentials secret key: ${langfuseSecretKey.substring(0, 10)}...`);
+            console.log(`Setting langfuse credentials base url: ${langfuseBaseURL}`);
+            await configurationPutItem('langfuse_public_key', encrypt(langfusePublicKey, aesKey));
+            await configurationPutItem('langfuse_secret_key', encrypt(langfuseSecretKey, aesKey));
+            await configurationPutItem('langfuse_host', langfuseBaseURL);
+        }
         await configurationPutItem('security-scan-job-queue', 'tvo-security-scan-job-queue-local');
         await configurationPutItem('security-scan-job-definition', 'tvo-security-scan-job-definition-local');
         console.log('Getting user api key');

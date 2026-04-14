@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
-import { EventBus, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
+import { EventBus, Rule } from 'aws-cdk-lib/aws-events';
 import { SqsQueue } from 'aws-cdk-lib/aws-events-targets';
 import { Queue } from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
-import { AttributeType, GlobalSecondaryIndexProps, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 
@@ -29,34 +29,14 @@ export class AppStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300),
     });
 
-    // Issue Report
-
-    const sqsInputIssueReport = new Queue(this, 'InputQueueIssueReport', {
-      queueName: 'tvo-mcp-issue-report-input-local',
-      visibilityTimeout: cdk.Duration.seconds(300),
-    });
-
-    // Bitbucket Code Insights
-
-    const sqsInputBitbucketCodeInsights = new Queue(this, 'InputBitbucketCodeInsights', {
-      queueName: 'tvo-mcp-bitbucket-code-insights-input-local',
-      visibilityTimeout: cdk.Duration.seconds(300),
-    });
-
-    // Github Issue
-
-    const sqsInputGithubIssue = new Queue(this, 'InputGithubIssue', {
-      queueName: 'tvo-mcp-github-issue-input-local',
-      visibilityTimeout: cdk.Duration.seconds(300),
-    });
-
     // DynamoDB
 
     // Task Table
 
     const dynamoDB = new Table(this, 'DynamoDB', {
       tableName: 'tvo-task-local',
-      partitionKey: { name: 'task_id', type: AttributeType.STRING },
+      // Debe coincidir con task.dynamo.ts y dynamo_task_repository.py (clave scan_id).
+      partitionKey: { name: 'scan_id', type: AttributeType.STRING },
       timeToLiveAttribute: 'ttl',
     });
 
@@ -159,83 +139,6 @@ export class AppStack extends cdk.Stack {
 
     ruleOutput.addTarget(new SqsQueue(sqsOutput));
 
-    // Issue Report
-
-    const ruleInputIssueReport = new Rule(this, 'RuleInputIssueReport', {
-      eventBus: eventBus,
-      description: 'Rule to trigger when a issue report input is received',
-      ruleName: 'mcp-issue-report-input',
-      eventPattern: {
-        source: ['mcp.tool.issue.report'],
-        detailType: ['input'],
-      },
-    });
-
-    const ruleOutputIssueReport = new Rule(this, 'RuleOutputIssueReport', {
-      eventBus: eventBus,
-      description: 'Rule to trigger when a issue report output is received',
-      ruleName: 'mcp-issue-report-output',
-      eventPattern: {
-        source: ['mcp.tool.issue.report'],
-        detailType: ['output'],
-      },
-    });
-
-    ruleInputIssueReport.addTarget(new SqsQueue(sqsInputIssueReport));
-
-    ruleOutputIssueReport.addTarget(new SqsQueue(sqsOutput));
-
-    // Bitbucket Code Insights
-
-    const ruleInputBitbucketCodeInsights = new Rule(this, 'RuleInputBitbucketCodeInsights', {
-      eventBus: eventBus,
-      description: 'Rule to trigger when a bitbucket code insights input is received',
-      ruleName: 'mcp-bitbucket-code-insights-input',
-      eventPattern: {
-        source: ['mcp.tool.bitbucket.code-insights'],
-        detailType: ['input'],
-      },
-    });
-
-    const ruleOutputBitbucketCodeInsights = new Rule(this, 'RuleOutputBitbucketCodeInsights', {
-      eventBus: eventBus,
-      description: 'Rule to trigger when a bitbucket code insights output is received',
-      ruleName: 'mcp-bitbucket-code-insights-output',
-      eventPattern: {
-        source: ['mcp.tool.bitbucket.code-insights'],
-        detailType: ['output'],
-      },
-    });
-
-    ruleInputBitbucketCodeInsights.addTarget(new SqsQueue(sqsInputBitbucketCodeInsights));
-
-    ruleOutputBitbucketCodeInsights.addTarget(new SqsQueue(sqsOutput));
-
-    // Github Issue
-    const ruleInputGithubIssue = new Rule(this, 'RuleInputGithubIssue', {
-      eventBus: eventBus,
-      description: 'Rule to trigger when a github issue input is received',
-      ruleName: 'mcp-github-issue-input',
-      eventPattern: {
-        source: ['mcp.tool.github.issue'],
-        detailType: ['input'],
-      },
-    });
-
-    const ruleOutputGithubIssue = new Rule(this, 'RuleOutputGithubIssue', {
-      eventBus: eventBus,
-      description: 'Rule to trigger when a github issue output is received',
-      ruleName: 'mcp-github-issue-output',
-      eventPattern: {
-        source: ['mcp.tool.github.issue'],
-        detailType: ['output'],
-      },
-    });
-
-    ruleInputGithubIssue.addTarget(new SqsQueue(sqsInputGithubIssue));
-
-    ruleOutputGithubIssue.addTarget(new SqsQueue(sqsOutput));
-
     // S3
 
     // Bucket de reportes de seguridad
@@ -307,60 +210,6 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/sqs/mcp/git-commit-files/input/queue_url`,
       stringValue: sqsInputGitCommitFiles.queueUrl,
       description: 'URL de la cola de entrada de MCP Git Commit Files'
-    });
-
-    new StringParameter(this, 'SSMParameterIssueReportInputQueueArn', {
-      parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_arn`,
-      stringValue: sqsInputIssueReport.queueArn,
-      description: 'ARN de la cola de entrada de MCP Issue Report'
-    });
-
-    new StringParameter(this, 'SSMParameterIssueReportInputQueueName', {
-      parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_name`,
-      stringValue: sqsInputIssueReport.queueName,
-      description: 'Nombre de la cola de entrada de MCP Issue Report'
-    });
-
-    new StringParameter(this, 'SSMParameterIssueReportInputQueueUrl', {
-      parameterName: `${basePath}/sqs/mcp/issue-report/input/queue_url`,
-      stringValue: sqsInputIssueReport.queueUrl,
-      description: 'URL de la cola de entrada de MCP Issue Report'
-    });
-
-    new StringParameter(this, 'SSMParameterBitbucketCodeInsightsInputQueueArn', {
-      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_arn`,
-      stringValue: sqsInputBitbucketCodeInsights.queueArn,
-      description: 'ARN de la cola de entrada de MCP Bitbucket Code Insights'
-    });
-
-    new StringParameter(this, 'SSMParameterBitbucketCodeInsightsInputQueueName', {
-      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_name`,
-      stringValue: sqsInputBitbucketCodeInsights.queueName,
-      description: 'Nombre de la cola de entrada de MCP Bitbucket Code Insights'
-    });
-
-    new StringParameter(this, 'SSMParameterBitbucketCodeInsightsInputQueueUrl', {
-      parameterName: `${basePath}/sqs/mcp/bitbucket-code-insights/input/queue_url`,
-      stringValue: sqsInputBitbucketCodeInsights.queueUrl,
-      description: 'URL de la cola de entrada de MCP Bitbucket Code Insights'
-    });
-
-    new StringParameter(this, 'SSMParameterGithubIssueInputQueueArn', {
-      parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_arn`,
-      stringValue: sqsInputGithubIssue.queueArn,
-      description: 'ARN de la cola de entrada de MCP Github Issue'
-    });
-
-    new StringParameter(this, 'SSMParameterGithubIssueInputQueueName', {
-      parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_name`,
-      stringValue: sqsInputGithubIssue.queueName,
-      description: 'Nombre de la cola de entrada de MCP Github Issue'
-    });
-
-    new StringParameter(this, 'SSMParameterGithubIssueInputQueueUrl', {
-      parameterName: `${basePath}/sqs/mcp/github-issue/input/queue_url`,
-      stringValue: sqsInputGithubIssue.queueUrl,
-      description: 'URL de la cola de entrada de MCP Github Issue'
     });
 
     // Infra base

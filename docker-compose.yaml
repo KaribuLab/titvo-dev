@@ -7,14 +7,17 @@ services:
       AWS_ENDPOINT_URL: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AWS_ENDPOINT_URL_S3: http://${DOCKER_LOCALSTACK_IP:-10.5.0.5}:4566
       AES_KEY: ${AES_KEY:-12345678901234567890123456789012}
-      BITBUCKET_CLIENT_ID: ${BITBUCKET_CLIENT_ID:-key_bitbucket}
-      BITBUCKET_CLIENT_SECRET: ${BITBUCKET_CLIENT_SECRET:-secret_bitbucket}
+      BITBUCKET_API_TOKEN: ${BITBUCKET_API_TOKEN:-token_bitbucket}
       GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-token_github}
       IA_PROVIDER: ${IA_PROVIDER:-openai}
       IA_MODEL: ${IA_MODEL:-gpt-4o-mini}
       IA_API_KEY: ${IA_API_KEY:-api_key_ia}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-b96f6b9a-7e2c-4701-901c-9a06d9f9b255}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-8849756d-7227-43b1-a480-e5ada33d0622}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
     volumes:
       - ./localstack/app:/app
+      - ./prompts:/app/prompts
     depends_on:
       - localstack
     networks:
