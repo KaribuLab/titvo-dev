@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-05-25
+updated: 2026-05-26
+summary: LangGraph + 5 expertos, prompts embebidos, MCP asíncrono (commit-files + poll), TITVO_AGENT_MODE, docs y troubleshooting.

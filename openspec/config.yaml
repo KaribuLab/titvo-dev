@@ -1,0 +1,18 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Python, TypeScript, Node.js, AWS, Docker, LocalStack, Terraform, Terragrunt, CDKLocal, MCP, Langfuse.
+  We use conventional commits
+  Domain: cybersecurity
+  This repository works like a monorepo, but with git submodules.
+  The project is divided into the following directories:
+   src/mcp: MCP tools that are used by the agent to analyze the code.
+   src/agent: Agent that analyzes the code and generates a report.
+   src/api: REST API that triggers the agent.
+
+rules:
+  proposal:
+    - Keep proposals under 500 words
+    - Always include a "Non-goals" section
+  tasks:
+    - Break tasks into chunks of max 2 hours
