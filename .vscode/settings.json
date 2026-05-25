@@ -6,5 +6,6 @@
                 "cmd": "terragrunt hclfmt --terragrunt-hclfmt-file ${file}"
             }
         ]
-    }
+    },
+    "pylint.enabled": false
 }
