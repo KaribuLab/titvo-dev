@@ -169,14 +169,10 @@ function encrypt(text: string, key: string): string {
         const githubAccessToken = process.env.GITHUB_ACCESS_TOKEN as string
         console.log(`Setting Github access token: ${githubAccessToken.substring(0, 20)}...`);
         await configurationPutItem('github_access_token', encrypt(githubAccessToken, aesKey));
-        const prompt = fs.readFileSync(path.join(__dirname, 'prompts', 'system_prompt.md'), 'utf8')
-        const contentTemplate = fs.readFileSync(path.join(__dirname, 'prompts', 'content_template.md'), 'utf8')
         console.log(`Setting mcp server url: ${mcpServerURL}`);
         await configurationPutItem('mcp_server_url', mcpServerURL);
-        console.log(`Setting system prompt: ${prompt.substring(0, 100)}...`);
-        await configurationPutItem('scan_system_prompt', prompt);
-        console.log(`Setting content template: ${contentTemplate.substring(0, 100)}...`);
-        await configurationPutItem('content_template', contentTemplate);
+        // Note: scan_system_prompt and content_template are now embedded in agent code
+        // at src/agent/src/code_analysis/prompts/ - no longer loaded from DynamoDB
         console.log(`Setting ai provider: ${iaProvider}`);
         await configurationPutItem('ai_provider', iaProvider);
         console.log(`Setting ai model: ${iaModel}`);

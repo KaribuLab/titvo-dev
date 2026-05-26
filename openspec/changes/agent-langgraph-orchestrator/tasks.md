@@ -60,6 +60,7 @@ Ubicación: `infra/adapters/langgraph/` y `infra/adapters/langgraph_agent.py`.
 - [x] 8.3 Crear `docs/prompts.md` con guía de prompts
 - [x] 8.4 Crear `docs/adding-experts.md` para agregar nuevos expertos
 - [x] 8.5 Crear `docs/troubleshooting.md` (incl. MCP asíncrono y Langfuse)
+- [x] 8.6 Alinear toda `docs/` con implementación (polling MCP, `TITVO_AGENT_MODE`, Dockerfile, merge vs `FindingsMerger`, `orchestrator_prompt` solo referencia en LangGraph)
 
 ## 9. Calidad de código
 
