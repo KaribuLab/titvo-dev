@@ -13,6 +13,10 @@ const userId = 'tvo-user-local';
 const iaProvider = process.env.IA_PROVIDER as string
 const iaModel = process.env.IA_MODEL as string
 const iaAPIKey = process.env.IA_API_KEY as string
+const awsStage = process.env.AWS_STAGE ?? 'local'
+const ragIndexBucketName = `titvo-code-rag-${awsStage}`
+const embeddingProvider = process.env.EMBEDDING_PROVIDER ?? 'openai'
+const embeddingModel = process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small'
 
 // Configurar cliente para Localstack
 const client = new DynamoDBClient({
@@ -179,6 +183,14 @@ function encrypt(text: string, key: string): string {
         await configurationPutItem('ai_model', iaModel);
         console.log(`Setting ai api key: ${iaAPIKey.substring(0, 10)}...`);
         await configurationPutItem('ai_api_key', encrypt(iaAPIKey, aesKey));
+        console.log(`Setting rag index bucket: ${ragIndexBucketName}`);
+        await configurationPutItem('rag_index_bucket', ragIndexBucketName);
+        console.log(`Setting embedding provider: ${embeddingProvider}`);
+        await configurationPutItem('embedding_provider', embeddingProvider);
+        console.log(`Setting embedding model: ${embeddingModel}`);
+        await configurationPutItem('embedding_model', embeddingModel);
+        console.log('Setting embedding_api_key (same source as IA_API_KEY)');
+        await configurationPutItem('embedding_api_key', encrypt(iaAPIKey, aesKey));
         const langfusePublicKey = process.env.LANGFUSE_PUBLIC_KEY as string
         const langfuseSecretKey = process.env.LANGFUSE_SECRET_KEY as string
         const langfuseBaseURL = process.env.LANGFUSE_BASE_URL as string

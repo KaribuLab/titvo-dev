@@ -11,6 +11,8 @@ import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 const basePath = '/tvo/security-scan/localstack/infra';
 const aesKey = process.env.AES_KEY ?? 'secret_key_aes';
 
+const awsStage = process.env.AWS_STAGE ?? 'local';
+
 export class AppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -161,6 +163,11 @@ export class AppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const s3RagIndex = new Bucket(this, 'S3RagIndex', {
+      bucketName: `titvo-code-rag-${awsStage}`,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     const secretBitbucket = new Secret(this, 'SecretBitbucket', {
       secretName: '/tvo/mcp/localstack/bitbucket_credentials',
       description: 'Secret local de credenciales de Bitbucket',
@@ -308,6 +315,18 @@ export class AppStack extends cdk.Stack {
       parameterName: `${basePath}/s3/git-commit-files/bucket_name`,
       stringValue: s3GitCommitFiles.bucketName,
       description: 'Nombre del bucket de git-commit-files'
+    });
+
+    new StringParameter(this, 'SSMParameterS3RagCodeBucketArn', {
+      parameterName: `${basePath}/s3/rag-code/bucket_arn`,
+      stringValue: s3RagIndex.bucketArn,
+      description: 'ARN del bucket de índices RAG'
+    });
+
+    new StringParameter(this, 'SSMParameterS3RagCodeBucketName', {
+      parameterName: `${basePath}/s3/rag-code/bucket_name`,
+      stringValue: s3RagIndex.bucketName,
+      description: 'Nombre del bucket de índices RAG'
     });
 
     // Dynamo

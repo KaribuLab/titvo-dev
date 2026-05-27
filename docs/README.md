@@ -18,7 +18,8 @@ TITVO_AGENT_MODE=legacy python -m src.main
 
 ## Documentación
 
-- [Arquitectura](architecture.md) - Diagramas de flujo y componentes
+- [Arquitectura del Agente](architecture.md) - Diagramas de flujo y componentes del agente de análisis
+- [RAG Indexer](rag-indexer.md) - Servicio de indexación de repositorios para RAG
 - [Guía de prompts](prompts.md) - Cómo modificar prompts de expertos
 - [Agregar expertos](adding-experts.md) - Guía para nuevos expertos
 - [Troubleshooting](troubleshooting.md) - Errores comunes
