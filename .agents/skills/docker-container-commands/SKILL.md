@@ -31,6 +31,12 @@ Get the API Gateway URL of Titvo:
 docker compose exec trigger api-gateway-url
 ```
 
+Other ways to use with AWS CLI local:
+
+```bash
+docker compose exec cdk aws sts get-caller-identity
+```
+
 ## When to use
 
 This skill should be used when you need get information from this services of `docker-compose.yaml` file:
