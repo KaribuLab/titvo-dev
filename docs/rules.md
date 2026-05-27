@@ -30,3 +30,13 @@ Los prefijos de los commits se utilizan para semantic versioning, por lo que hay
 - PATCH: Cambios que arreglan errores o mejoras de rendimiento.
 
 **Los mensajes de commit deben ser en español.**
+
+## Specs
+
+- Se debe incluir en cada task.md estas tareas:
+  - [ ] Generar diagrama de secuencia para el spec.
+  - [ ] Generar o actualizar documentación del componente
+  - [ ] Generar o actualizar tests unitarios
+  - [ ] Actualizar `docs/architecture.md` con los cambios.
+  - [ ] Usar el skill `find-docs` para validar que se use la documentación correcta y actualizada de cada librería utilizada.
+  - [ ] Siempre validar con el linter correspondiente que no haya errores en el código.

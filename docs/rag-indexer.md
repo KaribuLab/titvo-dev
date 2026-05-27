@@ -12,8 +12,9 @@ TITVO_REPO_URL=https://github.com/org/repo \
 TITVO_BRANCH=main \
 python -m src.main
 
-# Modo delta index (commits posteriores, por SHA)
+# Modo delta index (commits posteriores, requiere branch + SHA)
 TITVO_REPO_URL=https://github.com/org/repo \
+TITVO_BRANCH=main \
 TITVO_COMMIT_SHA=abc123 \
 python -m src.main
 ```
@@ -22,15 +23,19 @@ python -m src.main
 
 ```mermaid
 flowchart TD
-    Input[TITVO_REPO_URL + BRANCH/COMMIT_SHA] --> Mode{Determinar modo}
-    Mode -->|TITVO_BRANCH| Full[Full Index]
-    Mode -->|TITVO_COMMIT_SHA| Delta[Delta Index]
+    Input[TITVO_REPO_URL + TITVO_BRANCH + opcional TITVO_COMMIT_SHA] --> CheckBranch{¿TITVO_BRANCH?}
+    CheckBranch -->|No| ErrorBranch[Error: branch requerido]
+    CheckBranch -->|Sí| CheckSha{¿TITVO_COMMIT_SHA?}
+
+    CheckSha -->|No| Full[Full Index]
+    CheckSha -->|Sí| Delta[Delta Index]
 
     Full --> Resolve[Resolver HEAD SHA via API]
     Resolve --> GetAll[Obtener todos los archivos vía REST API]
 
-    Delta --> CheckLatest[Leer latest/meta.json de S3]
-    CheckLatest --> DownloadDB[Descargar latest/index.db]
+    Delta --> CheckLatest[Leer branches/{branch}/latest/meta.json]
+    CheckLatest -->|No existe| ErrorDelta[Error: full index requerido]
+    CheckLatest -->|Existe| DownloadDB[Descargar branches/{branch}/latest/index.db]
     DownloadDB --> Diff[Calcular diff vía API]
     Diff --> GetChanged[Obtener solo archivos cambiados]
 
@@ -39,7 +44,7 @@ flowchart TD
 
     Chunk --> Embed[Generar embeddings]
     Embed --> Store[SQLite + sqlite-vec]
-    Store --> Upload[Subir a S3: {sha}/ y latest/]
+    Store --> Upload[Subir a S3: branches/{branch}/{sha}/ y latest/]
 ```
 
 ## Estructura S3
@@ -47,12 +52,14 @@ flowchart TD
 ```
 s3://<bucket>/
 ├── github.com/org/repo/
-│   ├── abc123/
-│   │   ├── index.db       ← Base de datos SQLite con vectores
-│   │   └── meta.json      ← {"commit_sha": "abc123", "indexed_at": "..."}
-│   └── latest/
-│       ├── index.db       ← Copia del commit más reciente
-│       └── meta.json      ← Puntero al último commit indexado
+│   └── branches/
+│       └── {branch}/
+│           ├── {commit_sha}/
+│           │   ├── index.db       ← Base de datos SQLite con vectores
+│           │   └── meta.json      ← {"commit_sha": "...", "indexed_at": "..."}
+│           └── latest/
+│               ├── index.db       ← Copia del commit más reciente
+│               └── meta.json      ← Puntero al último commit indexado
 ```
 
 ## Variables de entorno
@@ -60,15 +67,18 @@ s3://<bucket>/
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
 | TITVO_REPO_URL | Sí | URL del repositorio (GitHub o Bitbucket) |
-| TITVO_BRANCH | No* | Rama para full index |
-| TITVO_COMMIT_SHA | No* | SHA para delta index |
+| TITVO_BRANCH | Sí | Rama para full/delta index |
+| TITVO_COMMIT_SHA | No | SHA para delta index (solo para delta) |
 | TITVO_DYNAMO_CONFIGURATION_TABLE_NAME | Sí | Tabla DynamoDB de configuración |
 | TITVO_ENCRYPTION_KEY_NAME | Sí | Clave KMS para secretos |
 | TITVO_CHUNK_SIZE | No | Tamaño de chunk (default: 1000) |
 | TITVO_CHUNK_OVERLAP | No | Overlap de chunks (default: 200) |
 | TITVO_LOG_LEVEL | No | Nivel de log (default: INFO) |
 
-*Requiere una de las dos: BRANCH (full) o COMMIT_SHA (delta)
+**Combinaciones válidas:**
+- `TITVO_BRANCH` solo → Full index (resuelve HEAD de la rama)
+- `TITVO_BRANCH` + `TITVO_COMMIT_SHA` → Delta index (compara con índice de la rama)
+- `TITVO_COMMIT_SHA` solo → **Error**: branch es siempre requerido
 
 ## Configuración DynamoDB
 
@@ -85,16 +95,34 @@ s3://<bucket>/
 
 ### Full Index
 
-Usar cuando no existe índice previo para el repositorio.
+Usar cuando no existe índice previo para la rama.
 
 **Flujo:**
-1. Recibe `TITVO_BRANCH`
-2. Resuelve HEAD SHA de la rama vía API
-3. Obtiene árbol completo de archivos vía REST API
-4. Divide archivos en chunks con `RecursiveCharacterTextSplitter`
-5. Genera embeddings con LangChain/OpenAI
-6. Almacena en SQLite + sqlite-vec
-7. Sube a S3 en `{sha}/` y copia a `latest/`
+```mermaid
+sequenceDiagram
+    participant U as UseCase
+    participant RP as RepositoryProvider
+    participant AS as ArtifactStore
+    participant VS as VectorStore
+
+    U->>U: Recibe branch, commit_sha=None
+    U->>RP: resolve_branch_sha(repo_url, branch)
+    RP-->>U: commit_sha
+    U->>AS: get_latest_commit_sha(repo_url, branch)
+    AS-->>U: existing_sha (o None)
+    alt existing_sha == commit_sha
+        U->>U: Return (idempotency, 0 chunks)
+    else nuevo SHA
+        U->>RP: get_files(repo_url, commit_sha)
+        RP-->>U: all_files
+        U->>VS: Crear vector store vacío
+        loop Para cada archivo
+            U->>U: chunk + embed
+            U->>VS: store chunks
+        end
+        U->>AS: upload_db(repo, branch, commit_sha, db_path)
+    end
+```
 
 **Ejemplo:**
 ```bash
@@ -107,21 +135,52 @@ python -m src.main
 
 ### Delta Index
 
-Usar para commits subsiguientes cuando ya existe un índice previo.
+Usar para commits subsiguientes cuando ya existe un índice previo para la rama.
 
 **Flujo:**
-1. Recibe `TITVO_COMMIT_SHA`
-2. Lee `latest/meta.json` de S3 para obtener SHA previo
-3. Calcula diff entre commits vía API (`/compare` o `/diffstat`)
-4. Descarga `latest/index.db` de S3
-5. Elimina vectores de archivos modified/deleted
-6. Obtiene contenido de archivos added/modified vía API
-7. Procesa chunks y embeddings solo para archivos nuevos/cambiados
-8. Sube DB actualizada a S3
+```mermaid
+sequenceDiagram
+    participant U as UseCase
+    participant RP as RepositoryProvider
+    participant AS as ArtifactStore
+    participant VS as VectorStore
+
+    U->>U: Recibe branch + commit_sha
+    U->>AS: get_latest_commit_sha(repo_url, branch)
+    AS-->>U: prev_sha (o None)
+    alt prev_sha es None
+        U->>U: Raise ValueError("full index requerido")
+    else prev_sha == commit_sha
+        U->>U: Return (idempotency, 0 chunks)
+    else nuevo SHA
+        U->>AS: download_latest_db(repo_url, branch)
+        AS-->>U: db_path (o None)
+        alt db_path es None
+            U->>U: Raise ValueError("index corrupto")
+        end
+        U->>RP: get_changed_files(repo, prev_sha, commit_sha)
+        RP-->>U: diff (added, modified, deleted)
+        alt diff vacío
+            U->>U: Return (no changes, 0 chunks)
+        else hay cambios
+            U->>VS: Cargar DB descargada
+            U->>VS: delete_by_file_paths(modified + deleted)
+            U->>RP: get_files(repo, commit_sha)
+            RP-->>U: all_files
+            U->>U: Filtrar added/modified
+            loop Para cada archivo cambiado
+                U->>U: chunk + embed
+                U->>VS: store chunks
+            end
+            U->>AS: upload_db(repo, branch, commit_sha, db_path)
+        end
+    end
+```
 
 **Ejemplo:**
 ```bash
 TITVO_REPO_URL=https://github.com/KaribuLab/titvo \
+TITVO_BRANCH=main \
 TITVO_COMMIT_SHA=a1b2c3d \
 TITVO_DYNAMO_CONFIGURATION_TABLE_NAME=titvo-config \
 TITVO_ENCRYPTION_KEY_NAME=titvo-key \
@@ -176,8 +235,9 @@ boto3 = ">=1.40.59"
 
 ### "No previous index found" en modo delta
 
-- Fallback automático a full index
-- Primera ejecución debe usar `TITVO_BRANCH`
+- **Error explícito** (no hay fallback automático)
+- Ejecutar primero full index con `TITVO_BRANCH`
+- Luego ejecutar delta con `TITVO_BRANCH` + `TITVO_COMMIT_SHA`
 
 ### "Rate limit exceeded"
 
