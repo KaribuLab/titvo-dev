@@ -2,9 +2,7 @@
 
 ### Requirement: Índice S3 segmentado por rama
 
-El sistema SHALL almacenar y recuperar el índice RAG en S3 usando el prefijo `{repo}/branches/{branch}/latest/` cuando la rama esté disponible, en lugar de `{repo}/latest/`.
-
-Cuando no se disponga de nombre de rama (backward compat), SHALL continuar usando `{repo}/latest/` como fallback.
+El sistema SHALL almacenar y recuperar el índice RAG en S3 usando siempre el prefijo `{repo}/branches/{branch}/latest/`. `TITVO_BRANCH` es un parámetro obligatorio en todos los modos de operación.
 
 #### Scenario: Full-index sube al prefijo de rama
 
@@ -16,10 +14,10 @@ Cuando no se disponga de nombre de rama (backward compat), SHALL continuar usand
 - **WHEN** el indexer ejecuta en modo delta con `TITVO_COMMIT_SHA` y `TITVO_BRANCH=feature/my-pr`
 - **THEN** el `latest/meta.json` leído para obtener el SHA base proviene de `{repo}/branches/feature/my-pr/latest/meta.json`
 
-#### Scenario: Sin rama usa prefijo legacy
+#### Scenario: Ejecución sin rama lanza error
 
-- **WHEN** el indexer ejecuta sin `TITVO_BRANCH` (solo `TITVO_COMMIT_SHA`)
-- **THEN** el índice se escribe y lee desde `{repo}/latest/`
+- **WHEN** el indexer ejecuta sin `TITVO_BRANCH` (solo `TITVO_COMMIT_SHA` o ninguna variable de rama)
+- **THEN** el sistema lanza `ValueError` indicando que `TITVO_BRANCH` es requerido
 
 ### Requirement: Verificación de índice existente por rama antes del análisis
 
