@@ -69,8 +69,19 @@ app.post('/get-job-status', async (req, res) => {
     console.log(`Getting job status for job ${jobId}`)
     const job = await docker.getContainer(jobId)
     const status = await job.inspect()
+    const dockerStatus = status.State.Status
+    let batchStatus = dockerStatus.toUpperCase()
+
+    if (dockerStatus === 'exited') {
+        batchStatus = status.State.ExitCode === 0 ? 'SUCCEEDED' : 'FAILED'
+    } else if (['running', 'created', 'restarting'].includes(dockerStatus)) {
+        batchStatus = 'RUNNING'
+    } else if (['dead', 'removing'].includes(dockerStatus)) {
+        batchStatus = 'FAILED'
+    }
+
     res.send({
-        status: status.State.Status
+        status: batchStatus
     })
 })
 
