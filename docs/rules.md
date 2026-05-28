@@ -40,3 +40,8 @@ Los prefijos de los commits se utilizan para semantic versioning, por lo que hay
   - [ ] Actualizar `docs/architecture.md` con los cambios.
   - [ ] Usar el skill `find-docs` para validar que se use la documentación correcta y actualizada de cada librería utilizada.
   - [ ] Siempre validar con el linter correspondiente que no haya errores en el código.
+
+## SDD
+
+- Utilizar openspec con opsx para generar el SDD.
+- Cada vez que se indiquen modificaciones sobre el spec actual, se debe actualizar dicha spec.
