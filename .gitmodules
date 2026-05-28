@@ -19,3 +19,6 @@
 [submodule "src/mcp/gateway"]
 	path = src/mcp/gateway
 	url = git@github.com:KaribuLab/titvo-mcp-gateway.git
+[submodule "src/rag-indexer"]
+	path = src/rag-indexer
+	url = git@github.com:KaribuLab/titvo-rag-indexer.git
