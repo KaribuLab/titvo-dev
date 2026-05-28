@@ -1,4 +1,10 @@
-## ADDED Requirements
+# langgraph-orchestration Specification
+
+## Purpose
+
+Orquestación del análisis de código con LangGraph: nodos MCP, expertos de seguridad, merge de hallazgos y contrato `AbstractAgent`. La integración RAG (pre-scan y post-scan delta) vive fuera del grafo en `AnalyseCodeUseCase`.
+
+## Requirements
 
 ### Requirement: LangGraph StateGraph defines workflow nodes
 
@@ -62,12 +68,19 @@ _Nota de implementación: el nodo `merge` puede deduplicar por primera aparició
 
 ### Requirement: LangGraphAgent implements AbstractAgent port
 
-The LangGraph SHALL implement **`AbstractAgent`** so application wiring can select graph vs legacy without changing the analysis use case contract at the JSON boundary (ajustes menores de plantilla permitidos, p. ej. **`files_content`** vacío para `content_template`).
+The `LangGraphAgent` SHALL be the only agent implementation wired in `main.py`. There is no legacy mode or feature flag switching.
 
-#### Scenario: Feature flag switching
+The `AnalyseCodeUseCase` SHALL execute a pre-scan RAG indexing check and a post-scan delta trigger **outside** the LangGraph graph, before and after calling `self.agent.invoke()` respectively. These steps SHALL NOT be implemented as LangGraph nodes.
 
-- **WHEN** **`TITVO_AGENT_MODE`** is **`legacy`**
-- **THEN** **`LangchainAgent`** is wired; **`langgraph`** (default) wires **`LangGraphAgent`**.
+#### Scenario: Pre-scan RAG check is outside the graph
+
+- **WHEN** `AnalyseCodeUseCase.execute()` is called
+- **THEN** the RAG index check and full indexing (if needed) run BEFORE `self.agent.invoke()` is called, with no changes to the LangGraph node topology
+
+#### Scenario: Post-scan delta trigger is outside the graph
+
+- **WHEN** `self.agent.invoke()` returns
+- **THEN** the fire-and-forget delta trigger runs AFTER the graph result is obtained, with no changes to the LangGraph node topology
 
 ### Requirement: Langfuse tracing
 
