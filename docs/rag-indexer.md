@@ -280,18 +280,72 @@ cd src/rag-indexer
 .venv/bin/python -m pytest tests/unit/ -v
 ```
 
-## Integración futura con src/agent
+## Consumo del index.db por el agente
 
-El diseño prepara `IVectorStorePort.search()` para ser consumido por el agente:
+El agente (`src/agent`) utiliza activamente el `index.db` generado por el rag-indexer durante cada
+análisis de seguridad. El flujo es:
+
+### 1. Descarga desde S3
+
+`S3SqliteRagContextAdapter` descarga el archivo `latest/index.db` a un archivo temporal en `/tmp`
+al inicio de cada job (el contenedor Batch es efímero, la descarga ocurre una sola vez por ejecución):
 
 ```python
-# Pseudocódigo de integración futura
-vector_store = SqliteVecStoreAdapter(
-    db_path=download_latest_db(repo_url),
-    embedding_provider=embedding_provider,
-    ...
+# Ruta S3: {repo_path}/branches/{branch}/latest/index.db
+adapter = S3SqliteRagContextAdapter(
+    s3_client=boto3.client("s3"),
+    bucket_name=TITVO_RAG_INDEXER_BUCKET,
+    embedding_provider="openai",
+    embedding_model="text-embedding-3-small",
+    embedding_api_key=api_key,
 )
-results = vector_store.search("SQL injection vulnerability", k=5)
+adapter.configure(repository_url, branch)
 ```
 
-El cambio `agent-rag-integration` implementará esta conexión.
+### 2. Búsqueda vectorial en el nodo `rag_retrieve`
+
+Por cada archivo del commit, `RagRetrievalNode` ejecuta una búsqueda vectorial con la misma API de
+embeddings usada en la indexación:
+
+```python
+# query = "{path}\n{content[:400]}"
+chunks = adapter.search(query=f"{file_path}\n{file_content[:400]}", k=3)
+# → [{"file_path": "...", "chunk_text": "...", "distance": 0.12}, ...]
+```
+
+Los resultados se deduplican por `chunk_text` y se limitan a 30 chunks totales.
+
+### 3. Post-filtrado por experto
+
+Cada nodo experto aplica `should_analyze_file(chunk["file_path"])` sobre los `rag_chunks` del estado.
+Esto garantiza que cada experto reciba solo el contexto RAG relevante a su dominio (sin costo de
+embeddings adicional):
+
+- `devsecops`: filtra a `.yml`, `Dockerfile`, `.tf`, `.github/**`
+- `owasp_api`: filtra a controllers, routes, handlers
+- `owasp_web`: filtra a `.html`, `.tsx`, `.vue`, `.js`
+- `prompt_hardening`, `code_vulnerabilities`: reciben todos los chunks (sin filtro)
+
+### 4. Entrega al LLM
+
+Los chunks filtrados se incluyen en el human message como bloque `=== RAG CONTEXT ===`:
+
+```
+=== FILE: src/auth.ts ===
+...contenido del commit...
+=== END FILE ===
+
+=== RAG CONTEXT (codebase background) ===
+--- src/middleware/auth.ts ---
+...chunk del codebase relacionado...
+=== END RAG CONTEXT ===
+```
+
+### 5. Limpieza
+
+Tras completar la búsqueda, `adapter.close()` elimina el archivo temporal del `index.db`.
+
+### Degradación graceful
+
+En cualquier punto del flujo (S3 no disponible, índice no encontrado, error de embeddings, error
+de sqlite-vec), el adaptador retorna `[]` y el análisis continúa solo con los archivos del commit.

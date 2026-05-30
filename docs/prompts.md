@@ -51,11 +51,48 @@ graph TD
 
 | Experto | Archivo | Foco |
 |---------|---------|------|
-| prompt_hardening | `experts/prompt_hardening.md` | Detectar payloads de prompt injection |
+| prompt_hardening | `experts/prompt_hardening.md` | Detectar payloads de prompt injection y supply-chain AI attacks |
 | owasp_api | `experts/owasp_api.md` | OWASP API Top 10 |
 | owasp_web | `experts/owasp_web.md` | OWASP Web Top 10 |
 | devsecops | `experts/devsecops.md` | CI/CD, IaC, containers |
 | code_vulnerabilities | `experts/code_vulnerabilities.md` | Vulns de lenguaje |
+
+## Contexto RAG en los expertos
+
+Cada experto recibe, además de los archivos del commit, un bloque opcional de contexto RAG
+(`=== RAG CONTEXT ===`) en el human message. Este bloque contiene fragmentos semánticamente
+relacionados del codebase completo de la rama, recuperados mediante búsqueda vectorial.
+
+### Estructura del human message con RAG
+
+```
+=== FILE: src/auth.ts ===
+...contenido del archivo del commit...
+=== END FILE ===
+
+=== RAG CONTEXT (codebase background) ===
+--- src/middleware/auth.middleware.ts ---
+...chunk semánticamente relacionado del codebase...
+--- src/guards/jwt.guard.ts ---
+...otro chunk...
+=== END RAG CONTEXT ===
+```
+
+Si no hay chunks RAG disponibles (índice ausente, error de embedding, etc.), el bloque no aparece
+en el human message y el análisis procede solo con los archivos del commit.
+
+### Instrucciones de interpretación en los prompts
+
+Todos los archivos `experts/*.md` incluyen la sección `## RAG Context (contexto del codebase completo)`
+que instruye al LLM sobre:
+
+- **Cuándo escalar severidad**: si el RAG Context confirma que el código vulnerable del commit es
+  utilizado ampliamente en otros archivos del proyecto.
+- **Cómo citar el contexto**: como evidencia de impacto, no como fuente de nuevos hallazgos.
+- **Regla de no-reporte independiente**: el LLM **no debe reportar issues basados exclusivamente en
+  fragmentos del RAG Context**; solo puede usarlos para enriquecer el análisis de los archivos del
+  commit.
+- **Caso sin RAG**: si el bloque está vacío o ausente, continuar el análisis normalmente.
 
 ## Cargar prompts en código
 

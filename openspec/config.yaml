@@ -16,3 +16,7 @@ rules:
     - Always include a "Non-goals" section
   tasks:
     - Break tasks into chunks of max 2 hours
+    - Always include a final task group "Documentation" with tasks to update the files
+      in docs/ that are relevant to the change (e.g. docs/architecture.md,
+      docs/prompts.md, docs/rag-indexer.md). Identify which docs are affected based
+      on what the change modifies and include one task per file to update.

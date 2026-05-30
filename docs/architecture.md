@@ -36,8 +36,10 @@ flowchart TD
 ```mermaid
 flowchart LR
     Start([Start]) --> MCP[mcp_retrieve]
-    MCP -->|archivos OK| EH[expert_prompt_hardening]
+    MCP -->|archivos OK| RAG[rag_retrieve]
     MCP -->|mcp_error o sin files| MG[merge]
+
+    RAG -->|rag_chunks en state| EH[expert_prompt_hardening]
 
     EH --> EAPI[expert_owasp_api]
     EAPI --> EWEB[expert_owasp_web]
@@ -48,19 +50,34 @@ flowchart LR
     MG --> END([End])
 ```
 
+## Rol activo del índice RAG durante el análisis
+
+Después de que `mcp_retrieve` obtiene los archivos del commit, el nodo `rag_retrieve` descarga
+`latest/index.db` desde S3 (generado por el rag-indexer) y ejecuta una búsqueda vectorial por cada
+archivo del commit. Los chunks semánticamente relacionados del codebase completo de la rama se
+almacenan en `state.rag_chunks`.
+
+Cada nodo experto recibe los `rag_chunks` y los filtra por sus patrones de archivo (`should_analyze_file`).
+Los chunks filtrados se incluyen en el human message al LLM como bloque `=== RAG CONTEXT ===`.
+
+Si el índice no está disponible o cualquier operación falla, `rag_chunks` se inicializa en `[]` y el
+análisis continúa con solo los archivos del commit (degradación graceful).
+
 ## Flujo de Datos (State)
 
 ```mermaid
 flowchart TD
     subgraph State["AgentState (TypedDict)"]
-        Task[task_id, repository_url, commit_hash]
+        Task[task_id, repository_url, branch, commit_hash]
         Files[files, scaned_files]
         MCPERR[mcp_error opcional]
+        RAGChunks[rag_chunks opcional]
         Issues[issues, expert_errors]
         Meta[expert_metadata]
     end
     
     MCP -->|popula| Files
+    RAG_Node[rag_retrieve] -->|popula| RAGChunks
     Exp1 -->|appends| Issues
     Exp2 -->|appends| Issues
     Exp3 -->|appends| Issues
@@ -76,9 +93,12 @@ flowchart TD
 | LangGraphAgent | `infra/adapters/langgraph_agent.py` | Implementa AbstractAgent con workflow LangGraph |
 | Workflow Builder | `infra/adapters/langgraph/workflow.py` | Construye StateGraph con nodos |
 | MCP Node | `infra/adapters/langgraph/nodes/mcp_retrieval_node.py` | Invoke + polling MCP (`commit-files`, `commit-files.poll`, `files`), parámetros `repository`/`commitId`/`path` |
-| Expert Nodes | `infra/adapters/langgraph/nodes/expert_nodes.py` | Cinco expertos con filtros de archivo |
+| RAG Retrieval Node | `infra/adapters/langgraph/nodes/rag_retrieval_node.py` | Descarga `index.db` de S3 y busca chunks por cada archivo del commit; almacena en `rag_chunks` |
+| RAG Context Port | `domain/ports/rag_context_port.py` | Puerto hexagonal `IRagContextPort` con `configure()`, `search()` y `close()` |
+| RAG Context Adapter | `infra/adapters/s3_sqlite_rag_context_adapter.py` | Descarga S3 + búsqueda sqlite-vec; degradación graceful ante errores |
+| Expert Nodes | `infra/adapters/langgraph/nodes/expert_nodes.py` | Cinco expertos con filtros de archivo; cada uno filtra `rag_chunks` por `should_analyze_file()` |
 | Merge Node | `infra/adapters/langgraph/nodes/merge_findings_node.py` | Dedup por clave (`get_dedup_key`), estado FAILED/WARNING/COMPLETED |
-| FindingsMerger | `domain/services/findings_merger.py` | Política en dominio: severidad menor ante conflictos mismos `(path,line,category)`; el grafo puede evolucionar a reutilizarlo plenamente en `merge` |
+| FindingsMerger | `domain/services/findings_merger.py` | Política en dominio: severidad menor ante conflictos mismos `(path,line,category)` |
 | PromptRegistry | `prompts/__init__.py` | Carga prompts embebidos |
 
 ## Contrato MCP (gateway Titvo)
