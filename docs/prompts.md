@@ -61,9 +61,13 @@ graph TD
 
 ## Contexto RAG en los expertos
 
-Cada experto recibe, además de los archivos del commit, un bloque opcional de contexto RAG
+Cada experto recibe, además de los archivos seleccionados para el análisis, un bloque opcional de contexto RAG
 (`=== RAG CONTEXT ===`) en el human message. Este bloque contiene fragmentos semánticamente
 relacionados del codebase completo de la rama, recuperados mediante búsqueda vectorial.
+
+Los archivos seleccionados vienen de MCP: en `scan_mode=commit` son los archivos del commit; en
+`scan_mode=full` son los archivos del snapshot completo de la rama/ref. El RAG sigue siendo contexto
+de fondo para correlación y dependencias.
 
 ### Estructura del human message con RAG
 
@@ -81,19 +85,19 @@ relacionados del codebase completo de la rama, recuperados mediante búsqueda ve
 ```
 
 Si no hay chunks RAG disponibles (índice ausente, error de embedding, etc.), el bloque no aparece
-en el human message y el análisis procede solo con los archivos del commit.
+en el human message y el análisis procede solo con los archivos seleccionados vía MCP.
 
 ### Instrucciones de interpretación en los prompts
 
 Todos los archivos `experts/*.md` incluyen la sección `## RAG Context (contexto del codebase completo)`
 que instruye al LLM sobre:
 
-- **Cuándo escalar severidad**: si el RAG Context confirma que el código vulnerable del commit es
+- **Cuándo escalar severidad**: si el RAG Context confirma que el código vulnerable analizado es
   utilizado ampliamente en otros archivos del proyecto.
 - **Cómo citar el contexto**: como evidencia de impacto, no como fuente de nuevos hallazgos.
 - **Regla de no-reporte independiente**: el LLM **no debe reportar issues basados exclusivamente en
-  fragmentos del RAG Context**; solo puede usarlos para enriquecer el análisis de los archivos del
-  commit.
+  fragmentos del RAG Context**; solo puede usarlos para enriquecer el análisis de los archivos
+  seleccionados por MCP.
 - **Caso sin RAG**: si el bloque está vacío o ausente, continuar el análisis normalmente.
 
 ## Cargar prompts en código
@@ -116,6 +120,7 @@ expert_prompt = prompts.get_expert_prompt("owasp_api")
 En `content_template.md`:
 - `{repository_url}` — URL del repositorio
 - `{commit_hash}` — Hash del commit
+- `{branch}` — Rama del scan
 - `{args}` — Parámetros adicionales
 - `{files_content}` — Bloque opcional para incluir contenido formateado (en algunos caminos puede dejarse vacío y rellenarse en iteraciones siguientes si el caso de uso lo requiere)
 

@@ -93,6 +93,14 @@ s3://<bucket>/
 
 ## Modos de operación
 
+El agente usa el RAG index como contexto de fondo para correlación, dependencias y arquitectura; no es
+la fuente primaria de archivos analizados. Los archivos primarios siempre vienen del MCP
+`git.commit-files` en modo `commit` o `full`.
+
+Para `scan_mode=full`, el agente prioriza exactitud sobre velocidad: antes de ejecutar LangGraph,
+verifica que el commit/ref objetivo esté indexado con `is_commit_indexed(repo, branch, commit_sha)`.
+Si no lo está, dispara indexación y espera a que termine para evitar contexto stale.
+
 ### Full Index
 
 Usar cuando no existe índice previo para la rama.
