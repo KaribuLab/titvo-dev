@@ -21,9 +21,10 @@ flowchart TD
     Files -->|secuencial| Exp1[Expert: Prompt Hardening]
     Exp1 --> Exp2[Expert: OWASP API]
     Exp2 --> Exp3[Expert: OWASP Web]
-    Exp3 --> Exp4[Expert: DevSecOps]
-    Exp4 --> Exp5[Expert: Code Vulns]
-    Exp5 --> Merge[Merge Node]
+    Exp3 --> Exp4[Expert: OWASP Mobile]
+    Exp4 --> Exp5[Expert: DevSecOps]
+    Exp5 --> Exp6[Expert: Code Vulns]
+    Exp6 --> Merge[Merge Node]
     
     Merge -->|JSON| Notify[Notificaciones]
     Notify --> Bit[Bitbucket]
@@ -43,7 +44,8 @@ flowchart LR
 
     EH --> EAPI[expert_owasp_api]
     EAPI --> EWEB[expert_owasp_web]
-    EWEB --> EDO[expert_devsecops]
+    EWEB --> EMOB[expert_owasp_mobile]
+    EMOB --> EDO[expert_devsecops]
     EDO --> ECV[expert_code_vulnerabilities]
     ECV --> MG
     
@@ -83,6 +85,7 @@ flowchart TD
     Exp3 -->|appends| Issues
     Exp4 -->|appends| Issues
     Exp5 -->|appends| Issues
+    Exp6 -->|appends| Issues
     Merge -->|dedupe + estado| Final[Final JSON]
 ```
 
@@ -96,7 +99,7 @@ flowchart TD
 | RAG Retrieval Node | `infra/adapters/langgraph/nodes/rag_retrieval_node.py` | Descarga `index.db` de S3 y busca chunks por cada archivo del commit; almacena en `rag_chunks` |
 | RAG Context Port | `domain/ports/rag_context_port.py` | Puerto hexagonal `IRagContextPort` con `configure()`, `search()` y `close()` |
 | RAG Context Adapter | `infra/adapters/s3_sqlite_rag_context_adapter.py` | Descarga S3 + búsqueda sqlite-vec; degradación graceful ante errores |
-| Expert Nodes | `infra/adapters/langgraph/nodes/expert_nodes.py` | Cinco expertos con filtros de archivo; cada uno filtra `rag_chunks` por `should_analyze_file()` |
+| Expert Nodes | `infra/adapters/langgraph/nodes/expert_nodes.py` | Seis expertos con filtros de archivo; cada uno filtra `rag_chunks` por `should_analyze_file()` |
 | Merge Node | `infra/adapters/langgraph/nodes/merge_findings_node.py` | Dedup por clave (`get_dedup_key`), estado FAILED/WARNING/COMPLETED |
 | FindingsMerger | `domain/services/findings_merger.py` | Política en dominio: severidad menor ante conflictos mismos `(path,line,category)` |
 | PromptRegistry | `prompts/__init__.py` | Carga prompts embebidos |
@@ -116,6 +119,7 @@ Legacy: el modelo puede orquestarlo en varios turnos. LangGraph: lo hace código
 | prompt_hardening | Todos | - |
 | owasp_api | rutas/handlers/controllers, openapi/swagger, patrones nombre | Todos si vacío |
 | owasp_web | `*.html`, `*.tsx`, `*template*`, `*.js`/`.jsx`/`.vue`, etc. | Todos si vacío |
+| owasp_mobile | `AndroidManifest.xml`, `network_security_config.xml`, `*.kt`, `*.swift`, `Info.plist`, `*.entitlements`, `pubspec.yaml`, `*.dart`, `app.json`, `*.tsx`/`.jsx`, etc. | Todos si vacío |
 | devsecops | `*.yml`, `Dockerfile*`, `*.tf`, `.github/**` | Todos si vacío |
 | code_vulnerabilities | Todos | - |
 
@@ -130,7 +134,7 @@ export TITVO_AGENT_MODE=langgraph
 ```
 
 - MCP en código determinístico (menos tokens en fase MCP).
-- Cinco expertos secuenciales y nodo **`merge`**.
+- Seis expertos secuenciales y nodo **`merge`**.
 - Tracing Langfuse vía **`langfuse.langchain.CallbackHandler`**.
 
 ### Legacy

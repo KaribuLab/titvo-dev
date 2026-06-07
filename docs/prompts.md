@@ -33,6 +33,7 @@ graph TD
         Experts --> PH[prompt_hardening.md]
         Experts --> OAPI[owasp_api.md]
         Experts --> OWEB[owasp_web.md]
+        Experts --> OMOB[owasp_mobile.md]
         Experts --> DSO[devsecops.md]
         Experts --> CV[code_vulnerabilities.md]
     end
@@ -54,6 +55,7 @@ graph TD
 | prompt_hardening | `experts/prompt_hardening.md` | Detectar payloads de prompt injection y supply-chain AI attacks |
 | owasp_api | `experts/owasp_api.md` | OWASP API Top 10 |
 | owasp_web | `experts/owasp_web.md` | OWASP Web Top 10 |
+| owasp_mobile | `experts/owasp_mobile.md` | OWASP MASVS/MASTG/MASWE con categorias OWASP Mobile Top 10 2024 |
 | devsecops | `experts/devsecops.md` | CI/CD, IaC, containers |
 | code_vulnerabilities | `experts/code_vulnerabilities.md` | Vulns de lenguaje |
 
@@ -118,6 +120,8 @@ En `content_template.md`:
 - `{files_content}` — Bloque opcional para incluir contenido formateado (en algunos caminos puede dejarse vacío y rellenarse en iteraciones siguientes si el caso de uso lo requiere)
 
 ## Reglas de severidad (compartidas)
+
+El prompt `owasp_mobile` sigue la misma politica conservadora y exige evidencia estatica concreta para severidades **CRITICAL/HIGH**. MASVS/MASTG/MASWE se usan como base tecnica de deteccion; OWASP Mobile Top 10 2024 se usa como taxonomia de reporte cuando aplica.
 
 **CRITICAL/HIGH:**
 - Vulnerabilidad confirmada y explotable

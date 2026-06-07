@@ -79,6 +79,8 @@ En el mismo archivo `expert_nodes.py`:
 1. Añadir la clase a **`EXPERT_CLASSES`** (`"mi_experto": MiExpertoNode`), por consistencia.
 2. Añadir **`MiExpertoNode(model)`** en la lista devuelta por **`create_expert_nodes`** en el orden deseado (el orden define la ejecución en el grafo).
 
+Ejemplo real: el experto mobile se registra como `owasp_mobile`, con clase `OwaspMobileNode`, prompt `experts/owasp_mobile.md` y posición en la cadena después de `OwaspWebNode` y antes de `DevSecOpsNode`.
+
 ## Paso 5: Rebuild y deploy
 
 ```bash
@@ -121,3 +123,10 @@ def test_expert_name():
     node = MiExpertoNode(None)
     assert node.expert_name == "mi_experto"
 ```
+
+También agregá pruebas para:
+
+- `get_file_patterns()` y `should_analyze_file()`.
+- Registro en `create_expert_nodes()`.
+- Carga del prompt en `PromptRegistry`.
+- Presencia del nodo en `LangGraphWorkflowBuilder` si cambia la cadena del grafo.
