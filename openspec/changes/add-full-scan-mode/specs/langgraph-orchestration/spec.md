@@ -38,6 +38,13 @@ The LangGraph merge step SHALL deduplicate findings that refer to the same concr
 - **THEN** the merge step returns a single issue in `final_output.issues`
 - **AND** the returned issue keeps the existing fields such as `title`, `description`, `severity`, `category`, `path`, `line`, `summary`, `code`, and `recommendation`
 
+#### Scenario: One code snippet contains the other
+
+- **WHEN** two expert findings have the same repository path and line
+- **AND** both findings include code snippets where one normalized snippet contains the other
+- **THEN** the merge step returns a single issue in `final_output.issues`
+- **AND** the merged issue uses the finding with the more complete code snippet as the primary output shape/content
+
 #### Scenario: Duplicate where only one finding has code
 
 - **WHEN** two expert findings are duplicate candidates for the same repository path and line

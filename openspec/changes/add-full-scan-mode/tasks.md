@@ -15,6 +15,7 @@
 - [x] 2.6 Normalize returned storage-prefixed file paths to repository-relative paths before expert prompts and final reporting.
 - [x] 2.7 Add unit tests for commit mode defaulting, full mode RAG freshness, stale RAG indexing wait, and full mode MCP invocation in `src/agent`.
 - [x] 2.8 Update findings merge/dedup logic to collapse duplicate expert findings by stable code evidence while preserving the existing issue JSON/report shape; prefer findings with non-empty `code` when duplicates differ.
+- [x] 2.9 Deduplicate duplicate findings when one normalized code snippet contains the other, preserving the more complete code evidence.
 
 ## 3. MCP Gateway Contract
 
