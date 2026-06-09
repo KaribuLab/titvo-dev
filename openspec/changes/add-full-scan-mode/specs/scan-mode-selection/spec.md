@@ -35,7 +35,8 @@ The agent SHALL derive the scan mode from the loaded task and provide it to Lang
 
 #### Scenario: Agent initializes full mode state
 - **WHEN** the agent executes a task with `scan_mode: "full"`
-- **THEN** the initial LangGraph state includes `scan_mode: "full"` and a scan reference based on the task branch
+- **THEN** the initial LangGraph state includes `scan_mode: "full"` and the selected branch as the full-scan scope
+- **AND** downstream provider retrieval resolves the selected branch to the concrete HEAD revision used for file downloads
 
 #### Scenario: Older task without scan mode
 - **WHEN** the agent executes a persisted task that has no `scan_mode` argument

@@ -14,6 +14,7 @@
 - [x] 2.5 Update `MCPRetrievalNode` to invoke `mcp.tool.git.commit-files` with `scanMode` and `branch` when available.
 - [x] 2.6 Normalize returned storage-prefixed file paths to repository-relative paths before expert prompts and final reporting.
 - [x] 2.7 Add unit tests for commit mode defaulting, full mode RAG freshness, stale RAG indexing wait, and full mode MCP invocation in `src/agent`.
+- [x] 2.8 Update findings merge/dedup logic to collapse duplicate expert findings by stable code evidence while preserving the existing issue JSON/report shape; prefer findings with non-empty `code` when duplicates differ.
 
 ## 3. MCP Gateway Contract
 
@@ -36,6 +37,9 @@
 - [x] 5.2 Implement paginated full tree listing for GitHub regular files at a branch/ref.
 - [x] 5.3 Implement paginated full tree listing for Bitbucket regular files at a branch/ref.
 - [x] 5.4 Add provider tests for pagination, directory filtering, removed-file behavior, and file downloads by ref.
+- [x] 5.5 Resolve full-mode branch/ref input to the provider HEAD commit before tree listing and downloads.
+- [x] 5.6 Add provider tests proving full mode scans the branch HEAD full tree, not only the trigger commit diff.
+- [x] 5.7 Add Bitbucket tests for branch names containing `/` (for example `feature/titvo-integration`) to ensure the branch is resolved before calling `/src/{commit}/{path}`.
 
 ## 6. End-to-End Verification
 

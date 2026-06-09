@@ -30,11 +30,20 @@ The `git-commit-files` worker SHALL keep existing commit-mode behavior when the 
 - **THEN** it retrieves files changed by commit `abc123` and uploads them under the existing commit prefix
 
 ### Requirement: Worker retrieves full branch files
-The `git-commit-files` worker SHALL support full-mode processing by listing all downloadable regular files for the selected branch/ref and uploading their current contents to S3.
+The `git-commit-files` worker SHALL support full-mode processing by resolving the selected branch/ref to the provider's current HEAD revision, listing all downloadable regular files at that resolved revision, and uploading their contents to S3.
 
 #### Scenario: Full mode worker processing
 - **WHEN** the worker receives `scan_mode: "full"` with branch/ref `main`
-- **THEN** it enumerates all downloadable files at `main`, uploads them to S3, and returns their storage paths
+- **THEN** it resolves `main` to its current provider HEAD revision, enumerates all downloadable files at that revision, uploads them to S3, and returns their storage paths
+
+#### Scenario: Full mode uses branch HEAD, not trigger commit diff
+- **WHEN** the selected branch HEAD contains files `a.txt`, `b.txt`, and `c.txt`, and the trigger commit only changed `c.txt`
+- **THEN** full mode uploads `a.txt`, `b.txt`, and `c.txt`
+
+#### Scenario: Bitbucket branch names with slashes are supported
+- **WHEN** the worker receives `scan_mode: "full"` for Bitbucket branch `feature/titvo-integration`
+- **THEN** it resolves the branch to a concrete HEAD commit before calling Bitbucket source listing endpoints
+- **AND** it does not pass `feature/titvo-integration` raw as the `{commit}` segment of `/src/{commit}/{path}`
 
 #### Scenario: Provider pagination is followed
 - **WHEN** the repository provider returns full tree files across multiple pages

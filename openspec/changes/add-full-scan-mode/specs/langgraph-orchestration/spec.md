@@ -27,3 +27,24 @@ If **`git.commit-files`** or **`poll`** returns failure, times out, or yields no
 
 - **WHEN** the state contains `scan_mode: "full"` and a branch
 - **THEN** `mcp_retrieve` invokes the gateway with full-mode parameters and stores repository-relative paths for the retrieved files.
+
+### Requirement: Merge node deduplicates repeated expert findings
+
+The LangGraph merge step SHALL deduplicate findings that refer to the same concrete code evidence before producing `final_output.issues`. The merged finding SHALL keep the existing issue JSON structure used by reports and downstream tools; it SHALL NOT wrap duplicates in a new nested `merged` object or otherwise change the annotation schema.
+
+#### Scenario: Same code evidence with different categories
+
+- **WHEN** two expert findings have the same repository path, same line, and same normalized code snippet, but different titles or categories
+- **THEN** the merge step returns a single issue in `final_output.issues`
+- **AND** the returned issue keeps the existing fields such as `title`, `description`, `severity`, `category`, `path`, `line`, `summary`, `code`, and `recommendation`
+
+#### Scenario: Duplicate where only one finding has code
+
+- **WHEN** two expert findings are duplicate candidates for the same repository path and line
+- **AND** one finding has a non-empty `code` value while the other has no code example
+- **THEN** the merged issue uses the finding that has the code example as the primary output shape/content
+
+#### Scenario: Duplicate report items are not rendered twice
+
+- **WHEN** duplicate expert findings are collapsed by the merge step
+- **THEN** the generated report receives only the deduplicated issue list and does not render repeated findings for the same evidence
