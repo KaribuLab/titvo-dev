@@ -57,7 +57,7 @@
 - [x] 6.2 Run relevant `src/agent` unit tests, including RAG freshness behavior for full mode.
 - [x] 6.3 Run relevant `src/mcp/gateway` tests.
 - [x] 6.4 Run relevant `src/mcp/git-commit-files` tests.
-- [ ] 6.5 Exercise the updated `.http` examples against LocalStack or the local API when the environment is available.
+- [x] 6.5 Exercise the updated `.http` examples against LocalStack or the local API when the environment is available.
 
 ## 7. Documentation
 

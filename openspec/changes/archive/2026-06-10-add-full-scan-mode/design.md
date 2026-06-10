@@ -53,9 +53,13 @@ Branch-level RAG indexing already exists, but it is background context only. It 
 
    Rationale: commit mode keeps `{commitId}/{filePath}` for compatibility. Full mode uses a non-conflicting prefix derived from the job, such as `full/{jobId}/{filePath}`, and returns `storagePrefix` so the agent can normalize analysis paths back to repository-relative paths.
 
-8. Deduplicate duplicate expert findings deterministically without changing issue shape.
+8. Consolidate duplicate expert findings without changing issue shape.
 
-   Rationale: full scans increase the chance that multiple experts report the same underlying weakness. The merge step should collapse findings that point to the same evidence, such as identical repository path, line, and code snippet, even when titles or categories differ. The merged issue should preserve the existing issue/report JSON structure instead of introducing a new nested merge object. When duplicate candidates differ in evidence quality, the issue containing a non-empty code example should win over an otherwise equivalent issue without code because it is more actionable in the final report.
+   Rationale: full scans increase the chance that multiple experts report the same underlying weakness. Deterministic matching is useful as a fallback but is too brittle as the primary merge strategy because web, mobile, and DevSecOps experts can describe the same weakness with different wording, nearby lines, and complementary remediation guidance. The merge step should give all structured expert findings to the model, let the model decide grouping/consolidation, and produce a final issue list that preserves the existing issue/report JSON structure, keeps concrete evidence from the input, uses the highest severity, and combines useful feedback when findings are equivalent. Prompt instructions should live in Markdown resources so prompt iteration does not require editing Python logic.
+
+9. Treat Bitbucket Code Insights as best-effort and use stable report IDs by scan mode.
+
+   Rationale: Code Insights publication is a notification side effect and should not turn an otherwise completed scan into an agent crash. Bitbucket can reject report creation when too many reports already exist for a commit, so the worker should use deterministic report IDs such as `titvo-security-scan-commit` and `titvo-security-scan-full`. Because the API uses `PUT`, repeated scans of the same commit and mode update the same report instead of creating unbounded reports.
 
 ## Risks / Trade-offs
 
@@ -66,7 +70,8 @@ Branch-level RAG indexing already exists, but it is background context only. It 
 - Full mode may create many S3 objects per scan -> use an isolated prefix per job and rely on existing bucket lifecycle/cleanup policies or add cleanup later.
 - Case conversion can break new fields -> align gateway camelCase schema with worker snake_case DTOs and test the published payload shape.
 - Findings may include S3 prefixes instead of repository paths -> normalize paths in the agent before expert prompts and final reporting.
-- Multiple experts can report the same issue with different titles/categories -> deduplicate by stable evidence while preserving the current report annotation shape.
+- Multiple experts can report the same issue with different titles/categories -> consolidate with the model while preserving the current report annotation shape and using deterministic merge only as fallback.
+- Bitbucket Code Insights may reject report creation due to provider limits -> keep the HTML report as the durable notification and degrade Code Insights publication gracefully.
 
 ## Migration Plan
 
