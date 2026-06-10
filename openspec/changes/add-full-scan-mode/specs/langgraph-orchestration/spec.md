@@ -28,9 +28,9 @@ If **`git.commit-files`** or **`poll`** returns failure, times out, or yields no
 - **WHEN** the state contains `scan_mode: "full"` and a branch
 - **THEN** `mcp_retrieve` invokes the gateway with full-mode parameters and stores repository-relative paths for the retrieved files.
 
-### Requirement: Merge node deduplicates repeated expert findings
+### Requirement: Merge node consolidates repeated expert findings
 
-The LangGraph merge step SHALL deduplicate findings that refer to the same concrete code evidence before producing `final_output.issues`. The merged finding SHALL keep the existing issue JSON structure used by reports and downstream tools; it SHALL NOT wrap duplicates in a new nested `merged` object or otherwise change the annotation schema.
+The LangGraph merge step SHALL consolidate findings that refer to the same underlying vulnerability before producing `final_output.issues`. The consolidated finding SHALL keep the existing issue JSON structure used by reports and downstream tools; it SHALL NOT wrap duplicates in a new nested `merged` object or otherwise change the annotation schema. Consolidation MAY combine useful description, summary, and remediation details from multiple experts when they report the same weakness.
 
 #### Scenario: Same code evidence with different categories
 
@@ -55,3 +55,45 @@ The LangGraph merge step SHALL deduplicate findings that refer to the same concr
 
 - **WHEN** duplicate expert findings are collapsed by the merge step
 - **THEN** the generated report receives only the deduplicated issue list and does not render repeated findings for the same evidence
+
+### Requirement: Merge node uses model-based findings consolidation
+
+When two or more findings remain, the LangGraph merge step SHOULD ask the model to produce a final consolidated issue list. The consolidation pass SHALL send the full structured findings produced by the experts, without pre-grouping, filtering, or selecting candidate pairs in code. The model SHALL decide which findings describe the same underlying vulnerability and SHALL return only JSON containing final issues with the existing issue fields: `title`, `description`, `severity`, `category`, `path`, `line`, `summary`, `code`, and `recommendation`.
+
+The consolidation prompt SHALL live in a Markdown file bundled with the agent package, not as a hardcoded string in Python. The consolidation pass SHALL preserve concrete evidence from the input findings and SHALL NOT invent files or code snippets. When multiple findings describe the same vulnerability in the same file, the model MAY choose a representative line from the input findings for that file. When multiple findings describe the same root problem or affected security control, the output SHOULD combine complementary feedback from those findings into one clearer issue, preserve the highest severity, and use the most actionable path/line/code evidence. The merge step SHALL accept strict JSON returned as plain text, fenced text, embedded text, or structured chat content blocks where a block `text` field is already an object containing `issues`. The merge step SHALL NOT apply deterministic deduplication, candidate selection, exact-evidence cleanup, or severity heuristics before or after model consolidation. If the model fails, times out, returns invalid JSON, or returns an invalid issue shape, the merge step SHALL log the response shape and a compact redacted preview of the returned content before keeping the original expert findings without failing the scan.
+
+#### Scenario: Equivalent findings from different experts
+
+- **WHEN** web and mobile experts report the same token storage weakness with different titles, summaries, or recommendations
+- **THEN** the consolidation pass returns one issue using the existing issue fields
+- **AND** the issue MAY combine useful explanation or remediation details from both experts
+
+#### Scenario: Consolidation payload remains bounded
+
+- **WHEN** the consolidation pass is invoked
+- **THEN** the model input includes structured expert findings and not precomputed duplicate groups or candidate pairs
+- **AND** it does not include full file contents, RAG context, or expert prompts
+
+#### Scenario: Consolidation prompt is externalized
+
+- **WHEN** the merge node builds the consolidation request
+- **THEN** it loads the prompt instructions from a Markdown prompt resource bundled with the agent package
+- **AND** the Python code only injects the serialized findings payload into that template
+
+#### Scenario: Consolidation failure falls back safely
+
+- **WHEN** the model call fails, times out, or returns invalid JSON
+- **THEN** the merge step logs the response shape and compact redacted preview without full code snippets
+- **AND** keeps the original expert findings without failing the scan
+
+#### Scenario: Structured content block response
+
+- **WHEN** the model response content is a list of chat blocks and a block `text` value is already an object with `issues`
+- **THEN** the merge step parses that object directly instead of converting the whole content list to a Python string representation
+- **AND** no JSON repair call is required
+
+#### Scenario: No deterministic merge cleanup
+
+- **WHEN** the consolidation model returns valid issues, even if they appear duplicate
+- **THEN** the merge step uses the model output as-is after schema/evidence validation
+- **AND** it does not call deterministic merge or deduplication logic to alter that output

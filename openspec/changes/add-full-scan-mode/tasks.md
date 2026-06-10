@@ -24,6 +24,7 @@
 - [x] 2.15 Update the consolidation prompt to merge aggressively by root security problem/control, and add final exact-evidence cleanup if the model returns duplicate report items.
 - [x] 2.16 Remove deterministic findings merge/deduplication from `FindingsMerger` and from merge-node fallback/cleanup so the consolidation agent is the only component that decides final grouping.
 - [x] 2.17 Add robust JSON parsing and model-assisted JSON repair for consolidation responses, preserving original findings if parsing and repair both fail.
+- [x] 2.18 Parse structured chat content block responses from the consolidation model and log redacted response shape/preview when parsing fails.
 
 ## 3. MCP Gateway Contract
 
