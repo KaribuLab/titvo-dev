@@ -286,6 +286,38 @@ Si falla, verificar:
 docker build -f src/rag-indexer/Dockerfile -t titvo-rag-indexer:latest src/rag-indexer
 ```
 
+## Despliegue a AWS
+
+El despliegue se automatiza con `.github/workflows/deploy-to-aws.yml` (push a `main` en el repo
+`KaribuLab/titvo-rag-indexer`). A diferencia de otros servicios, autentica por **OIDC** mediante
+`aws-actions/configure-aws-credentials` con `role-to-assume`, sin credenciales estáticas.
+
+### Prerequisitos
+
+- Rol IAM OIDC que GitHub pueda asumir, con permisos de deploy sobre `aws/*` (ECR, Batch, SSM, IAM).
+  Se referencia vía el secret `AWS_TITVO_BATCH_ROLE_TO_ASSUME`.
+- Secretos del repo: `AWS_TITVO_BATCH_ROLE_TO_ASSUME` (ARN del rol) y `AWS_TITVO_ACCOUNT_ID`.
+
+### Flujo
+
+1. Gates locales: `uv run ruff check .` y `uv run pytest`.
+2. `terragrunt apply` sobre `aws/ecr` con credenciales OIDC.
+3. Build y push de la imagen a ECR.
+4. Push con tag `:latest` además del tag por SHA: AWS Batch resuelve la job definition contra
+   `${ecr_repository_url}:latest` (módulo `terraform-aws-batch`).
+5. `terragrunt run-all apply` sobre `aws/` (batch y SSM upsert/lookup).
+
+Variables del workflow: `AWS_REGION=us-east-2`, `AWS_STAGE=prod`,
+`ECR_REPOSITORY=tvo-rag-indexer-ecr-prod`, `IMAGE_TAG=github.sha`. El resto viaja por
+`serverless.hcl` (`get_env` de `AWS_REGION`/`AWS_STAGE`/`AWS_ACCOUNT_ID`).
+
+Reproducción manual local:
+
+```bash
+cd src/rag-indexer/aws
+AWS_REGION=us-east-2 AWS_STAGE=prod AWS_ACCOUNT_ID=<id> terragrunt run-all apply
+```
+
 ## Tests unitarios
 
 ```bash
