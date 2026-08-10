@@ -162,6 +162,20 @@ function encrypt(text: string, key: string): string {
     return encrypted.toString('base64');
 }
 
+function privateKeyFromBase64(environmentVariable: string): string | undefined {
+    const encoded = process.env[environmentVariable];
+    if (!encoded) {
+        console.log(`Skipping ${environmentVariable}: value not configured`);
+        return undefined;
+    }
+
+    const privateKey = Buffer.from(encoded, 'base64').toString('utf8');
+    if (!privateKey.includes('PRIVATE KEY')) {
+        throw new Error(`${environmentVariable} does not contain a valid SSH private key`);
+    }
+    return privateKey;
+}
+
 (async () => {
     try {
         // Configurar la clave de encriptación en Secrets Manager
@@ -173,6 +187,17 @@ function encrypt(text: string, key: string): string {
         const githubAccessToken = process.env.GITHUB_ACCESS_TOKEN as string
         console.log(`Setting Github access token: ${githubAccessToken.substring(0, 20)}...`);
         await configurationPutItem('github_access_token', encrypt(githubAccessToken, aesKey));
+        const sshPrivateKeys = [
+            ['github_ssh_private_key', 'GITHUB_SSH_PRIVATE_KEY_BASE64'],
+            ['bitbucket_ssh_private_key', 'BITBUCKET_SSH_PRIVATE_KEY_BASE64'],
+        ] as const;
+        for (const [parameterName, environmentVariable] of sshPrivateKeys) {
+            const privateKey = privateKeyFromBase64(environmentVariable);
+            if (privateKey) {
+                console.log(`Setting ${parameterName}`);
+                await configurationPutItem(parameterName, encrypt(privateKey, aesKey));
+            }
+        }
         console.log(`Setting mcp server url: ${mcpServerURL}`);
         await configurationPutItem('mcp_server_url', mcpServerURL);
         // Note: scan_system_prompt and content_template are now embedded in agent code

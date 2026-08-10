@@ -122,6 +122,25 @@ aislado por job (`full/{jobId}/...`) y el agente normaliza esos paths antes de e
 
 Legacy: el modelo puede orquestarlo en varios turnos. LangGraph: lo hace código en `MCPRetrievalNode` (sin LLM para esa parte).
 
+### Acceso SSH a repositorios
+
+`git-commit-files` accede a GitHub y Bitbucket exclusivamente mediante comandos Git sobre SSH. El worker
+acepta las URLs HTTPS o SSH existentes, valida que el host sea exactamente `github.com` o
+`bitbucket.org` y construye un remoto SSH canónico. El host selecciona internamente el parámetro cifrado
+`github_ssh_private_key` o `bitbucket_ssh_private_key`; el contrato MCP no permite enviar llaves ni nombres
+de parámetros.
+
+Cada mensaje SQS obtiene una instancia aislada del cliente SSH. El directorio de clone, el archivo temporal
+de llave y el SHA resuelto pertenecen a un solo job, aunque la Lambda procese varios mensajes con
+`Promise.all`. El bloque `finally` elimina esos recursos tanto en éxito como en error.
+
+Para desplegar la modalidad SSH-only:
+
+1. Provisionar `github_ssh_private_key` y `bitbucket_ssh_private_key` cifradas, sin passphrase y con acceso de solo lectura a los repositorios requeridos.
+2. Registrar las llaves públicas como deploy keys en cada proveedor.
+3. Desplegar `git-commit-files` y validar scans `commit` y `full` en ambos proveedores, incluyendo jobs concurrentes.
+4. Retirar `github_access_token` de los consumidores migrados solo después de validar el despliegue; otros MCP pueden seguir usando sus tokens API.
+
 | Experto | Patrones | Fallback |
 |---------|----------|----------|
 | prompt_hardening | Todos | - |
