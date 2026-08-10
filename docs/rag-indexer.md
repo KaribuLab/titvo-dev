@@ -30,14 +30,14 @@ flowchart TD
     CheckSha -->|No| Full[Full Index]
     CheckSha -->|Sí| Delta[Delta Index]
 
-    Full --> Resolve[Resolver HEAD SHA via API]
-    Resolve --> GetAll[Obtener todos los archivos vía REST API]
+    Full --> Resolve[Resolver HEAD SHA vía Git SSH]
+    Resolve --> GetAll[Obtener blobs del commit vía Git SSH]
 
     Delta --> CheckLatest[Leer branches/{branch}/latest/meta.json]
     CheckLatest -->|No existe| ErrorDelta[Error: full index requerido]
     CheckLatest -->|Existe| DownloadDB[Descargar branches/{branch}/latest/index.db]
-    DownloadDB --> Diff[Calcular diff vía API]
-    Diff --> GetChanged[Obtener solo archivos cambiados]
+    DownloadDB --> Diff[Traer ambos commits y calcular git diff]
+    Diff --> GetChanged[Leer blobs añadidos o modificados]
 
     GetAll --> Chunk[LangChain Chunking]
     GetChanged --> Chunk
@@ -88,8 +88,11 @@ s3://<bucket>/
 | embedding_model | Modelo de embeddings (ej: text-embedding-3-small) |
 | embedding_provider | Proveedor (openai) |
 | embedding_api_key | API key para embeddings (encriptado; en local mismo valor que `ai_api_key` vía `IA_API_KEY`) |
-| github_access_token | Token GitHub API |
-| bitbucket_api_token | Token Bitbucket API |
+| github_ssh_private_key | Llave privada SSH de solo lectura para GitHub (encriptada) |
+| bitbucket_ssh_private_key | Llave privada SSH de solo lectura para Bitbucket (encriptada) |
+
+El indexador desencripta únicamente la llave correspondiente al host del repositorio. Las llaves deben
+estar autorizadas para lectura, no requerir passphrase y conservar saltos de línea PEM reales.
 
 ## Modos de operación
 
@@ -195,19 +198,18 @@ TITVO_ENCRYPTION_KEY_NAME=titvo-key \
 python -m src.main
 ```
 
-## API REST utilizadas
+## Obtención de fuentes por Git SSH
 
-### GitHub
-- `GET /repos/{owner}/{repo}/git/ref/heads/{branch}` - Resolver SHA de rama
-- `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1` - Árbol de archivos
-- `GET /repos/{owner}/{repo}/contents/{path}` - Contenido de archivo
-- `GET /repos/{owner}/{repo}/compare/{base}...{head}` - Diff entre commits
+GitHub y Bitbucket usan el mismo adaptador y siempre se normalizan a un remoto SSH:
 
-### Bitbucket
-- `GET /repositories/{workspace}/{slug}/refs/branches/{branch}` - Resolver SHA
-- `GET /repositories/{workspace}/{slug}/src/{sha}/` - Árbol de archivos (paginado)
-- `GET /repositories/{workspace}/{slug}/src/{sha}/{path}` - Contenido de archivo
-- `GET /repositories/{workspace}/{slug}/diffstat/{old}..{new}` - Diff (paginado)
+- `git ls-remote --heads` resuelve el SHA exacto de la rama.
+- `git init` crea un repositorio temporal sin working tree.
+- `git fetch --depth=1` trae únicamente el commit requerido; delta trae el SHA previo y el objetivo.
+- `git ls-tree` y `git cat-file` enumeran y leen blobs sin seguir symlinks del filesystem.
+- `git diff --name-status -z -M` clasifica añadidos, modificados, eliminados y renames.
+
+No existen adaptadores ni fallback de obtención por API. Cualquier fallo SSH termina el job con error.
+La identidad de `github.com` y `bitbucket.org` se verifica con host keys versionadas en la imagen.
 
 ## Filtrado de archivos
 
@@ -220,13 +222,14 @@ Se excluyen automáticamente:
 
 ```toml
 [dependencies]
-httpx = ">=0.28.0"
 langchain = ">=0.3.0"
 langchain-community = ">=0.3.0"
 langchain-openai = ">=0.3.0"
 sqlite-vec = ">=0.1.0"
 boto3 = ">=1.40.59"
 ```
+
+La imagen instala además `git` y `openssh-client` como dependencias del sistema.
 
 ## Troubleshooting
 
@@ -237,9 +240,10 @@ boto3 = ">=1.40.59"
 
 ### "Could not resolve branch"
 
-- Verificar que el token tenga permisos de lectura (`repo` para GitHub)
+- Verificar que la llave SSH del proveedor tenga acceso de lectura al repositorio
 - Verificar que la rama exista en el remoto
-- Verificar formato de URL: `https://github.com/owner/repo`
+- Verificar formato de URL: `https://github.com/owner/repo` o `git@github.com:owner/repo.git`
+- Verificar que el parámetro cifrado sea `github_ssh_private_key` o `bitbucket_ssh_private_key`
 
 ### "No previous index found" en modo delta
 
@@ -247,10 +251,11 @@ boto3 = ">=1.40.59"
 - Ejecutar primero full index con `TITVO_BRANCH`
 - Luego ejecutar delta con `TITVO_BRANCH` + `TITVO_COMMIT_SHA`
 
-### "Rate limit exceeded"
+### Error de autenticación o host key SSH
 
-- Implementado retry con backoff exponencial en adaptadores
-- Para repos grandes, la API puede requerir varias páginas (paginación automática)
+- Verificar que la llave no requiera passphrase y conserve formato PEM válido
+- Verificar que la llave pública asociada esté autorizada como deploy/access key de solo lectura
+- No usar `ssh-keyscan` ni desactivar `StrictHostKeyChecking`; las host keys están fijadas en la imagen
 
 ### Error cargando sqlite-vec
 
