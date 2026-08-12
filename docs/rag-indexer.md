@@ -394,3 +394,59 @@ Tras completar la búsqueda, `adapter.close()` elimina el archivo temporal del `
 
 En cualquier punto del flujo (S3 no disponible, índice no encontrado, error de embeddings, error
 de sqlite-vec), el adaptador retorna `[]` y el análisis continúa solo con los archivos del commit.
+
+## Resiliencia: checkpointing, source snapshot, lock distribuido y resume
+
+Desde el change `add-rag-indexer-resume-checkpointing`, el `rag-indexer` puede sobrevivir a interrupciones del job (OOM, timeout, evict) y coordinar runs concurrentes sobre la misma `(repo, branch)`.
+
+### S3 keys layout
+
+```
+{s3}/{repo_host}/{owner}/{repo}/
+├── locks/{branch}.json                        # lock distribuido (atomic IfNoneMatch)
+├── branches/{branch}/
+│   ├── checkpoints/{commit_sha}/
+│   │   ├── index.db                            # checkpoint DB en progreso
+│   │   └── repo.tar.gz                         # snapshot del .git local
+│   └── {commit_sha}/
+│       ├── index.db                            # DB final
+│       └── meta.json                           # timestamp
+└── latest/
+    ├── index.db                                # puntero al commit más reciente
+    └── meta.json
+```
+
+### Ciclo de vida del checkpoint
+
+1. **Run fresh**: no existe `index.db` de checkpoint. Se crea DB local vacío, se hace `git fetch` + `cat-file blob` × N, se sube el primer checkpoint DB a `checkpoints/{commit_sha}/index.db` cuando `processed_count % N == 0`.
+2. **Run interrumpido**: el job muere. El DB local efímero desaparece. El siguiente run para el mismo commit:
+   - Detecta checkpoint en S3, lo descarga.
+   - Detecta snapshot del `.git`, lo restaura.
+   - `get_files(exclude_paths=indexed_files)` lee solo los archivos no commiteados.
+   - Resume desde el siguiente archivo.
+3. **Run exitoso**: tras `upload_db`, el checkpoint + snapshot se eliminan.
+
+### Lock distribuido
+
+- **Adquisición**: `PutObject` con `IfNoneMatch="*"` en `locks/{branch}.json`. **Atómico** — si otro job ya tiene el lock, retorna `False`.
+- **Cuerpo del lock**: `owner`, `aws_batch_job_id`, `acquired_at`, `expires_at`, `commit_sha`.
+- **TTL**: 360 minutos (default). Renovación cada 30 min con `IfMatch` (no pisa lock ajeno).
+- **Fail-fast**: si el lock está activo, el job falla con `RuntimeError` ANTES de invocar `embed()`. Costo OpenAI de un job "perdedor": $0.
+- **Stale lock takeover**: si `expires_at < now`, el job toma el lock (con `IfNoneMatch="*"` retry).
+- **Defense in depth**: antes de embeber un archivo, `_process_files` consulta `is_file_indexed(file.path)`. Si otro job ya lo commiteó, lo skipea.
+
+### Política de uso desde el `src/agent`
+
+El lock S3 es la fuente de verdad para "job corriendo". El `src/agent` debería (futuro change) implementar `IRagIndexStatusPort.get_active_lock(repo, branch)` que lee `locks/{branch}.json`. Si retorna un lock no expirado, el agente debe esperar al job existente (haciendo polling de `lock.aws_batch_job_id` con `aws_batch.describe_jobs`) en lugar de gatillar uno nuevo. Esto garantiza que múltiples análisis concurrentes produzcan la misma calidad (operan sobre el mismo RAG index final).
+
+### Métrica `files_skipped_resume`
+
+El `IndexResultDto` incluye `files_skipped_resume: int` que reporta cuántos archivos se omitieron en un run de resume (ya estaban en `indexed_files`). Útil para saber cuánto progreso se preservó tras una interrupción.
+
+### Batching explícito + streaming
+
+- `LangChainEmbeddingAdapter.embed(texts)` particiona en bloques de `TITVO_EMBEDDING_BATCH_SIZE` (default 1000) y emite logs `INFO Embedded batch i/N chunks=N duration_ms=Y` por bloque.
+- `LangChainEmbeddingAdapter.embed_iter(texts_iter)` itera chunks uno a uno, batcheando on-the-fly. Permite streaming chunk-by-chunk.
+- `LangChainCodeSplitter.iter_chunks(file)` y `_process_files` cooperan para que por cada chunk se haga `insert_one` + `embedding_provider.embed_iter()` sin acumular listas en memoria.
+- Memoria pico del bloque: ~10 KB (1 chunk + 1 embedding) vs ~6 MB con listas pre-batched.
+

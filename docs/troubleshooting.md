@@ -117,4 +117,65 @@ cd src/agent
 .venv/bin/ruff check src/
 ```
 
+## RAG Indexer
+
+### Run interrumpido a mitad — qué esperar del resume
+
+**Síntoma:** El job de AWS Batch murió (timeout, OOM, evict) y querés saber qué se preservó.
+
+**Diagnóstico:** Revisá los CloudWatch logs del job:
+- `Checkpoint flushed: files_processed=N db_size_mb=X upload_ms=Y` → cuántos checkpoints alcanzó a subir.
+- `Lock acquired owner=...` → desde cuándo corre.
+- Si hay logs `Embedded batch i/N chunks=N` → cuántos batches de embeddings completó.
+
+**Recover automático:** El siguiente run del mismo `(TITVO_REPO_URL, TITVO_BRANCH, TITVO_COMMIT_SHA)`:
+1. Detecta el checkpoint DB en `branches/{branch}/checkpoints/{commit_sha}/index.db` y lo descarga.
+2. Detecta el snapshot `repo.tar.gz` y lo restaura (skip `git fetch`).
+3. Lee `indexed_files` y calcula `exclude_paths` para `get_files()`.
+4. Procesa solo los archivos restantes.
+5. Loguea `Resume mode: checkpoint_found=True files_already_indexed=N`.
+
+**Si no aparece resume:** eliminá cualquier artefacto previo en S3 (`s3 rm <bucket>/branches/{branch}/checkpoints/{commit_sha}/`) para forzar un run fresh.
+
+### Snapshot ausente — fallback a git fetch
+
+**Síntoma:** En logs aparece `WARNING: no source snapshot found, falling back to git fetch`.
+
+**Causa:** El primer checkpoint de un branch/commit no se subió (ej. job murió ANTES del primer `get_files()` exitoso), o se borró manualmente.
+
+**Efecto:** El resume funciona, pero hace `git fetch` + `cat-file blob` × N desde el remote. Más lento (~3 min en 20k archivos) que con snapshot (~5-10 s).
+
+**Workaround:** No aplica — es la degradación esperada. El nuevo run subirá un snapshot fresh después del primer `get_files()` exitoso.
+
+### Snapshot excede tamaño máximo
+
+**Síntoma:** El job falla con `ValueError: Snapshot size X MB exceeds maximum Y MB`.
+
+**Causa:** El `.git` del repo es más grande que `TITVO_MAX_SNAPSHOT_MB` (default 200). Común en repos con muchos tags o branches livianos.
+
+**Solución:** Subí `TITVO_MAX_SNAPSHOT_MB` (ej. 500) o deshabilita el snapshot subiéndolo a 0. Sin snapshot, el resume sigue funcionando, solo más lento.
+
+### Lock activo pertenece a otro job — fail-fast
+
+**Síntoma:** El job falla con `RuntimeError: Lock held by <owner> until <expires_at>, cannot start index for <branch>`.
+
+**Causa:** Otro job del indexer está corriendo para el mismo `(repo, branch)`. El lock es **atómico** vía `IfNoneMatch="*"` en `locks/{branch}.json`.
+
+**Efecto:** El job saliente NO gastó tokens de OpenAI (el lock acquisition es ÚNICO en `execute()`, antes de cualquier llamada a `embed()`).
+
+**Qué hacer:**
+1. Si el job activo está progresando: esperá a que termine (monitorea CloudWatch).
+2. Si el job activo está colgado: el lock expira en `TITVO_LOCK_TTL_MINUTES` (default 360 min). Después podés reintentar.
+3. Para intervención manual: `aws s3 rm s3://<bucket>/<repo>/locks/<branch>.json` (liberar el lock manualmente). Solo hacerlo si estás seguro de que no hay otro job corriendo.
+
+### Lock no se libera — esperar TTL o delete manual
+
+**Síntoma:** El job anterior murió sin pasar por el `finally` (OOM, kill -9). El lock quedó en S3.
+
+**Causa:** El `finally` del use case no se ejecutó. TTL está contando.
+
+**Qué hacer:**
+1. Esperá `TITVO_LOCK_TTL_MINUTES` (default 360 min).
+2. O forzar: `aws s3 rm s3://<bucket>/<repo>/locks/<branch>.json`.
+
 Si usas `uv`, sincroniza dependencias según tu `pyproject.toml` (grupo `dev` incluye Ruff).

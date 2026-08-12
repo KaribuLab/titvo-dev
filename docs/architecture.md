@@ -66,7 +66,35 @@ En modo `commit`, el pre-scan mantiene el comportamiento de verificar que exista
 En modo `full`, el pre-scan prioriza exactitud: valida que el índice RAG esté fresco para el
 `commit_hash` objetivo y espera indexación si está stale antes de ejecutar LangGraph.
 
-Si el índice no está disponible o cualquier operación de búsqueda falla durante `rag_retrieve`,
+### Resiliencia del rag-indexer (change `add-rag-indexer-resume-checkpointing`)
+
+El rag-indexer now puede reanudar runs interrumpidos y coordinar accesos concurrentes:
+
+```
+run_fresh:
+  acquire_lock(repo, branch) → True
+  download_checkpoint → None
+  download_source_snapshot → None
+  get_files(exclude_paths={})  # git fetch + cat-file blob × N
+  upload_source_snapshot      # solo primera vez
+  for each file:
+    iter_chunks → embed_iter → insert_one → mark_file_indexed
+    if every_n_files: upload_checkpoint
+  upload_db
+  delete_checkpoint + delete_source_snapshot + release_lock
+
+run_resume:
+  acquire_lock(repo, branch) → True
+  download_checkpoint → path
+  download_source_snapshot → path
+  restore_from_snapshot      # skip git fetch
+  get_files(exclude_paths=indexed_files)
+  continue process from last checkpoint
+  upload_db
+  cleanup
+```
+
+Para concurrencia: el `src/agent` DEBE leer `locks/{branch}.json` antes de gatillar un nuevo job. Si hay un lock activo, esperar al job existente (poll `lock.aws_batch_job_id`) en lugar de disparar uno nuevo. Ver `docs/rag-indexer.md` para detalles.
 `rag_chunks` se inicializa en `[]` y el análisis continúa con solo los archivos seleccionados vía MCP
 (degradación graceful).
 
