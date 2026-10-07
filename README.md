@@ -224,3 +224,9 @@ docker compose exec localstack awslocal events put-events --region us-east-1 --e
   }
 ]'
 ```
+
+## Fullscan local con MiniStack
+
+La CLI y el laboratorio aislado permiten enviar una copia local del proyecto al
+Agent real en Docker. El modo inicial usa IA simulada, sin evaluación de
+seguridad ni llamadas al proveedor. Ver [CLI y comandos](tools/cli/README.md).
