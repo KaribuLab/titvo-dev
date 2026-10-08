@@ -18,7 +18,7 @@ flowchart TD
     end
     C --> Files[Lista path + contenido]
 
-    Files -->|secuencial| Exp1[Expert: Prompt Hardening]
+    Files -->|paralelo| Exp1[Expert: Prompt Hardening]
     Exp1 --> Exp2[Expert: OWASP API]
     Exp2 --> Exp3[Expert: OWASP Web]
     Exp3 --> Exp4[Expert: OWASP Mobile]
@@ -189,7 +189,7 @@ export TITVO_AGENT_MODE=langgraph
 ```
 
 - MCP en código determinístico (menos tokens en fase MCP).
-- Seis expertos secuenciales y nodo **`merge`**.
+- Seis expertos en paralelo y nodo **`merge`**.
 - Tracing Langfuse vía **`langfuse.langchain.CallbackHandler`**.
 
 ### Legacy
@@ -204,3 +204,333 @@ export TITVO_AGENT_MODE=legacy
 ## Paths en componentes de la tabla
 
 Los archivos están bajo `src/agent/src/code_analysis/` (prefijo omitido arriba en paths relativos típicos a `infra/...`).
+
+
+## CLI fullscan con MiniStack
+
+El laboratorio aislado se define en `docker-compose.ministack.yaml` y el cliente
+vive en `tools/cli`. MiniStack implementa S3/DynamoDB; Docker ejecuta realmente el
+Agent. No se toma `Batch.SUCCEEDED` como evidencia de ejecución.
+
+La CLI usa el working tree, prepara tar.gz con hashes, registra `batch_id` y sólo
+crea la tarea después de la subida. `CliRetrievalNode` valida el paquete y
+entrega el mismo envelope `{path, content}` que la recuperación MCP. El grafo
+conserva el nombre interno `mcp_retrieve` para compatibilidad, pero su callable
+puede ser la fuente CLI inyectada. `main.py` selecciona esta fuente para tareas
+CLI y usa una fábrica sin tools MCP. Se omiten pre-indexación y delta Git, y RAG
+se desactiva para no consultar una versión distinta del snapshot.
+
+Se conserva el grafo actual de main: clasificación runtime, expertos en
+paralelo y lotes con concurrencia acotada. Archivos grandes se particionan con
+solapamiento y prefijo estructural, sin perder las líneas originales. El contrato
+estricto y una corrección acotada preservan hallazgos válidos y registran errores.
+La consolidación conserva la deduplicación L1 y el merge conservador L2 de main;
+`source_ids` verifican la procedencia por tupla path/line/code y evitan perder
+entradas omitidas por el modelo.
+
+El resultado añade `coverage`; el use-case conserva este diagnóstico en la tarea
+sin enviarlo al DTO de notificaciones. El laboratorio guarda reportes JSON/HTML
+en S3 y permite recuperarlos desde la CLI. El modelo mock es un test double,
+siempre identificado como prueba sin evaluación de seguridad.
+
+```mermaid
+sequenceDiagram
+    actor Usuario
+    participant CLI as CLI local
+    participant S3 as MiniStack S3
+    participant DB as MiniStack DynamoDB
+    participant Docker as Worker Docker
+    participant Agent as Agent LangGraph
+    participant IA as Mock o proveedor real
+    Usuario->>CLI: preview / scan de carpeta local
+    CLI->>CLI: Filtrar, congelar bytes y generar manifiesto
+    CLI->>S3: Subir tar.gz y manifiesto
+    CLI->>DB: Registrar batch_id y tarea PENDING
+    CLI->>Docker: Ejecutar worker con task_id
+    Docker->>DB: IN_PROGRESS
+    Docker->>Agent: Grafo con CliRetrievalNode
+    Agent->>DB: Consultar todos los paquetes del batch
+    Agent->>S3: Descargar paquetes
+    Agent->>Agent: Validar integridad antes de analizar
+    loop Expertos y lotes
+        Agent->>IA: Prompt y contenido acotado
+        IA-->>Agent: Hallazgos o error de lote
+    end
+    Agent->>IA: Consolidación conservadora por archivo
+    Agent-->>Docker: Resultado y cobertura
+    Docker->>S3: Guardar JSON y HTML
+    Docker->>DB: Estado terminal y report_key
+    CLI->>S3: Descargar reportes
+    CLI-->>Usuario: Hallazgos, exclusiones y cobertura
+```
+
+Alcance pendiente: RAG sobre snapshots, API pública/auth/Lambda y despliegue AWS.
+Ver `tools/cli/README.md` para comandos y límites.
+
+## Sesión guiada de la CLI local
+
+`titvo` en terminal inicia un dashboard Rich con un robot de bloques y un menú
+Questionary. La acción principal completa los pasos pendientes antes de invocar
+`guided_scan`; los ajustes se mantienen en un menú secundario. Las preferencias
+no secretas se guardan mediante una lista explícita en `.titvo/ui.json` del
+laboratorio. La carpeta actual tiene prioridad cuando se abre otro proyecto.
+La clave permanece en el entorno del proceso y nunca se serializa.
+
+`execute_scan` es compartido por el comando scriptable y el flujo guiado. El
+modo guiado realiza una sola confirmación sobre el snapshot preparado antes de
+escribir en MiniStack; cuando usa IA real, incluye autorización de envío. El
+avance muestra contadores reales de cada experto y tiempo transcurrido. Los
+logs técnicos se guardan localmente con redacción de la clave configurada.
+La respuesta guiada incluye su task_id y se usa ese reporte preciso al abrir
+el explorador, sin inferirlo del último archivo creado por otras sesiones.
+
+```mermaid
+sequenceDiagram
+    actor U as Usuario
+    participant UI as Dashboard Titvo
+    participant P as Preferencias locales
+    participant CLI as execute_scan
+    participant MS as MiniStack
+    participant W as Worker Docker
+    participant AI as Proveedor IA
+    U->>UI: titvo
+    UI->>P: Leer opciones no secretas
+    UI-->>U: Robot, preparación y Revisar proyecto
+    U->>UI: Revisar proyecto
+    loop Solo pasos pendientes
+        UI-->>U: Proyecto / alcance / modelo
+        U->>UI: Elegir opción
+    end
+    UI->>P: Guardar opciones sin claves
+    UI->>CLI: guided_scan
+    CLI-->>U: Preview y confirmación única
+    U->>CLI: Autorizar inicio (y envío si IA real)
+    CLI->>MS: Snapshot y tarea
+    CLI->>W: Ejecutar Agent
+    W->>MS: Leer snapshot
+    opt Modelo real
+        W->>AI: Analizar lotes
+        AI-->>W: Hallazgos
+    end
+    W-->>CLI: Contadores reales
+    CLI-->>U: Avance y tiempo
+    W->>MS: Reportes y cobertura
+    CLI->>MS: Descargar reporte de su task_id
+    CLI-->>UI: Resultado de esta tarea
+    UI-->>U: Explorar hallazgos / abrir HTML
+    U->>UI: Volver o salir
+```
+
+## Validación y recuperación de respuestas por lote
+
+El contrato común se añade al prompt de cada experto. `expert_response.py`
+normaliza únicamente diferencias inequívocas, valida campos/ruta/línea y separa
+hallazgos válidos de rechazados. Los rechazados se corrigen con `source_id` en
+una solicitud acotada a 16000 caracteres de datos y al presupuesto de contexto.
+La corrección debe conservar identidad y evidencia, y contabilizar cada ID.
+Los válidos iniciales y las correcciones exitosas siempre se conservan; los IDs
+sin resolver impiden declarar cobertura completa. Los lotes no se reejecutan
+cuando otro lote falla. No hay reanudación entre tareas.
+
+```mermaid
+sequenceDiagram
+    participant E as Experto por lote
+    participant M as Modelo IA
+    participant V as Validador
+    participant C as Consolidación
+    E->>M: Archivos y contrato común
+    M-->>E: JSON de hallazgos
+    E->>V: Validar y normalizar
+    V-->>E: Válidos, rechazados y motivos
+    opt Hallazgos rechazados dentro de límites
+        E->>M: Corregir solo IDs rechazados y evidencia de fuente
+        M-->>E: Correcciones por source_id
+        E->>V: Verificar cobertura de IDs, identidad y evidencia
+        V-->>E: Correcciones válidas e IDs sin resolver
+    end
+    E->>C: Hallazgos preservados y diagnósticos
+    C-->>E: Reporte con cobertura completa o incompleta
+```
+
+## Resumen de consumo y dashboard del laboratorio
+
+`tools/cli/titvo_cli/usage.py` envuelve el modelo del worker por tarea y cuenta
+invocaciones sync/async, incluidos expertos, reparaciones y consolidación.
+`metrics` registra duración total desde alta de tarea y duración del agente;
+`usage` persiste tokens, caché, tarifa, procedencia y costo estimado/completitud.
+Si faltan respuestas o tarifas, no declara un total conocido. Este contador
+está integrado al worker CLI local; el entry point AWS aún no lo integra.
+
+`titvo dashboard` inicia el frontend **existente** `titvo-admin-web` y
+`dashboard.py` en loopback. Su API de lectura adapta tareas locales, páginas de
+DynamoDB y reportes S3 a los contratos de repos/scans del frontend. Usa una
+identidad member de laboratorio explícita, sin autenticación de producción.
+Rechaza escrituras y orígenes externos; oculta administración en la UI local.
+Vite aplica el proxy solo cuando recibe `TITVO_DEV_API_URL`; el modo normal
+mantiene el BFF original. `VITE_TITVO_LAB` identifica visualmente el laboratorio.
+No agrega credenciales secretas al bundle. El frontend presenta métricas y
+hallazgos, mantiene el estado original y separa cobertura de evaluación.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuario
+    participant CLI as CLI
+    participant W as Worker Docker
+    participant M as Modelo y contador
+    participant MS as MiniStack S3/DynamoDB
+    participant API as Adaptador local de lectura
+    participant WEB as Dashboard existente
+    U->>CLI: scan proyecto
+    CLI->>MS: Snapshot y tarea con created_at
+    CLI->>W: Ejecutar task_id
+    loop Expertos, correcciones y consolidación
+        W->>M: ainvoke o invoke
+        M-->>W: Respuesta y consumo acumulado
+    end
+    W->>MS: Reporte con coverage, metrics y usage
+    CLI->>MS: Descargar reporte
+    CLI-->>U: Resumen final y hallazgos
+    U->>CLI: dashboard
+    CLI->>API: Iniciar en loopback
+    CLI->>WEB: Vite con proxy local
+    U->>WEB: Abrir repositorio/análisis
+    WEB->>API: GET detalle
+    API->>MS: Leer tarea y reporte S3
+    API-->>WEB: Mismo reporte y resumen
+    WEB-->>U: Duración, costo IA estimado y hallazgos
+```
+
+## Navegación de terminal y presentación de resultados
+
+`interactive.run_session` usa el contexto de pantalla alternativa de Rich; un
+`ContextVar[MenuFrame]` comparte proyecto/alcance/modelo y un cuerpo opcional de
+reporte entre submenús. `redraw` limpia la pantalla antes de listas y formularios;
+las listas se borran al aceptar. El contexto se restaura al salir, incluyendo
+credenciales heredadas. `menu_keys` extiende únicamente las listas de Questionary
+con `h/Esc` para volver y `l` para confirmar; `j/k` y flechas son bindings de la
+librería. Los formularios conservan entrada literal y las claves nunca se pintan.
+
+`theme.py` centraliza los colores de marca. `presentation.py` mantiene cuatro
+poses de igual tamaño; el Live existente las alterna durante procesos y las
+transiciones de menú cambian la pose sin hilo adicional. `NO_COLOR`,
+`TITVO_NO_ANIMATION` o un terminal dumb desactivan el movimiento.
+
+El frontend conserva datos completos del reporte y aplica orden/filtro/paginación
+solo en la vista. Métricas principales aparecen primero; los hallazgos son
+expandibles, mientras consumo detallado y JSON quedan en disclosures nativos.
+No se eliminan hallazgos al paginar y el filtro reinicia a la primera página.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuario
+    participant S as Pantalla alternativa
+    participant F as MenuFrame
+    participant Q as Questionary
+    participant W as Worker
+    participant D as Dashboard
+    U->>S: titvo
+    S->>F: Contexto de sesión
+    loop Navegación
+        F->>S: Limpiar y renderizar misma pantalla
+        F->>Q: Lista con flechas y j/k/h/l/Esc
+        U->>Q: Elegir o volver
+        Q-->>F: Valor, borrar lista anterior
+    end
+    opt Revisar proyecto
+        F->>W: Scan autorizado
+        W-->>F: Contadores reales por lote
+        F->>S: Live y mascota animada
+        W-->>F: Reporte completo o incompleto
+        F->>S: Resumen y explorador de hallazgos
+        D->>D: Ordenar, filtrar y paginar vista del mismo reporte
+    end
+    U->>S: Salir
+    S-->>U: Restaurar shell
+```
+
+Las opciones explícitas `Salir` y `Volver` se construyen con un objeto privado
+en lugar de `None`: Questionary interpreta `Choice(value=None)` como el título
+de la opción. `choose()` normaliza ese objeto a `None`, igual que la cancelación,
+para que el controlador cierre la sesión o regrese al menú padre.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuario
+    participant Q as Questionary
+    participant C as choose
+    participant S as Sesión
+    U->>Q: Salir + Enter/l
+    Q-->>C: Objeto privado de retorno
+    C-->>S: None
+    S->>S: Restaurar contexto y entorno
+    S-->>U: Restaurar shell y mostrar cierre
+```
+
+`outcome.py` separa ejecución (cobertura completa/parcial/fallida/desconocida),
+hallazgos y diagnósticos técnicos. `FAILED` en la evaluación no altera una
+ejecución completa. El adaptador de dashboard conserva `status` original y
+agrega `execution_status` leyendo la cobertura del reporte persistido, incluso
+en listas. El frontend conserva ambos campos y prioriza la ejecución medida
+en insignias y estadísticas; el resumen presenta hallazgos y errores por separado.
+
+```mermaid
+sequenceDiagram
+    participant R as Reporte persistido
+    participant C as CLI / outcome
+    participant A as LabAPI
+    participant D as Dashboard
+    R-->>C: Cobertura, hallazgos, errores
+    C->>C: Derivar ejecución sin usar hallazgos
+    C-->>C: Mostrar tres resultados independientes
+    R-->>A: Reporte solicitado
+    A->>C: Derivar execution_status
+    A-->>D: status original + execution_status + reporte
+    D->>D: Ejecución en listas y detalle; hallazgos y errores separados
+```
+
+
+## Destino de ejecución de la CLI
+
+Una misma UI selecciona `ministack` o `aws`. MiniStack conserva SDK/Docker; el
+transporte AWS vive en `tools/cli/titvo_cli/cloud.py` y usa los tres endpoints
+productivos existentes. La clave Titvo se envía únicamente al API configurado,
+no a la URL prefirmada S3. El modelo es configurado por el servicio AWS. No
+se persisten claves ni se cambia de transporte al fallar.
+
+El preview y la confirmación anteceden toda subida. La consulta AWS tiene un
+límite de espera y conserva el ID para `status`; Ctrl+C no cancela el job remoto.
+Los resultados sin `issues` usan `issues_count` y el reporte externo. Abrir el
+dashboard usa el launcher local o la URL productiva con su propio login.
+Las preferencias de menú no cambian scripts: estos requieren `--target aws`
+o `TITVO_TARGET=aws` para seleccionar el servicio remoto.
+
+```mermaid
+sequenceDiagram
+    actor Usuario
+    participant CLI as UI Titvo
+    participant Local as SDK MiniStack + Docker
+    participant API as API Titvo AWS
+    participant S3 as S3 presigned
+    participant Agent as Agent AWS Batch
+    Usuario->>CLI: Elegir destino y proyecto
+    CLI->>CLI: Filtrar working tree y congelar snapshot
+    CLI->>Usuario: Preview + destino + confirmación
+    alt MiniStack
+        CLI->>Local: Subir snapshot y ejecutar worker
+        Local-->>CLI: Reporte y cobertura
+    else AWS
+        CLI->>API: POST /cli-files con x-api-key
+        API-->>CLI: URL prefirmada
+        CLI->>S3: PUT tar.gz sin x-api-key
+        CLI->>API: POST /run-scan source=cli
+        API->>Agent: Iniciar job
+        API-->>CLI: scan_id
+        loop Hasta estado terminal o límite de espera
+            CLI->>API: POST /scan-status
+            API-->>CLI: Estado y resultado disponible
+        end
+    end
+    CLI-->>Usuario: Resumen medido + reporte o ID para consultar después
+```
+
+Contrato HTTP documentado con [urllib.request](https://docs.python.org/3/library/urllib.request.html).

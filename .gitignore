@@ -3,3 +3,11 @@
 !.env.localstack
 graphify-out
 .serena
+
+.venv-cli/
+.titvo/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,23 @@
+name: titvo-cli-lab
+services:
+  ministack:
+    image: ministackorg/ministack@sha256:0e51461e29524b884306810ce05c8a2e47f90f0c4dddc5a5f52166d2b56c7818
+    ports:
+      - "127.0.0.1:4566:4566"
+  worker:
+    build:
+      context: ..
+      dockerfile: titvo-dev/docker/cli/Dockerfile
+    profiles: [scan]
+    environment:
+      AWS_ENDPOINT: http://ministack:4566
+      TITVO_AI_PROVIDER: ${TITVO_AI_PROVIDER:-openai}
+      TITVO_AI_MODEL: ${TITVO_AI_MODEL:-}
+      TITVO_AI_API_KEY: ${TITVO_AI_API_KEY:-}
+      TITVO_AI_BASE_URL: ${TITVO_AI_BASE_URL:-}
+      TITVO_PRICE_INPUT_PER_MILLION: ${TITVO_PRICE_INPUT_PER_MILLION:-}
+      TITVO_PRICE_CACHED_PER_MILLION: ${TITVO_PRICE_CACHED_PER_MILLION:-}
+      TITVO_PRICE_OUTPUT_PER_MILLION: ${TITVO_PRICE_OUTPUT_PER_MILLION:-}
+      TITVO_EXPERT_FILE_CAP_CHARS: ${TITVO_EXPERT_FILE_CAP_CHARS:-30000}
+      TITVO_EXPERT_BATCH_BUDGET_CHARS: ${TITVO_EXPERT_BATCH_BUDGET_CHARS:-200000}
+    depends_on: [ministack]

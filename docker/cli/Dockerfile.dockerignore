@@ -1,0 +1,17 @@
+**
+!titvo-agent-aws/
+!titvo-agent-aws/pyproject.toml
+!titvo-agent-aws/uv.lock
+!titvo-agent-aws/README.md
+!titvo-agent-aws/src/
+!titvo-agent-aws/src/**
+!titvo-agent-aws/tests/
+!titvo-agent-aws/tests/**
+!titvo-dev/
+!titvo-dev/tools/
+!titvo-dev/tools/cli/
+!titvo-dev/tools/cli/pyproject.toml
+!titvo-dev/tools/cli/titvo_cli/
+!titvo-dev/tools/cli/titvo_cli/**
+**/__pycache__/
+**/*.egg-info/
