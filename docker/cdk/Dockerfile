@@ -2,7 +2,8 @@ FROM node:24-alpine3.21
 
 RUN apk add --no-cache curl aws-cli
 
-RUN npm install -g aws-cdk-local aws-cdk
+ARG CDK_VERSION=2.1145.0
+RUN npm install -g aws-cdk-local aws-cdk@${CDK_VERSION}
 
 COPY entrypoint.sh /entrypoint.sh
 COPY get-api-key.sh /usr/local/bin/get-api-key.sh

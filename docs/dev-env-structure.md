@@ -18,6 +18,15 @@ Este archivo define los servicios que se deben ejecutar para el ambiente de desa
 El archivo `localstack/app/lib/app-stack.ts` es el archivo de configuración para el ambiente de desarrollo.
 Este archivo define los servicios que se deben ejecutar para el ambiente de desarrollo.
 
+### Versiones de CDK en uso
+
+A partir del cierre del change `fix-fast-uri-advisories`, las versiones quedan pineadas así:
+
+- `aws-cdk-lib@2.261.0` en `localstack/app` y en los 5 subdirectorios `cdklocal/` (`src/api/task/trigger/cdklocal`, `src/mcp/git-commit-files/cdklocal`, `src/mcp/bitbucket-code-insights/cdklocal`, `src/mcp/issue-report/cdklocal`, `src/mcp/github-issue/cdklocal`).
+- `aws-cdk@2.1145.0` (CLI) en `devDependencies` de los mismos 6 paquetes.
+- Imagen Docker del servicio `cdk`: `aws-cdk@2.1145.0` global (pinedo via `ARG CDK_VERSION` en `docker/cdk/Dockerfile`).
+- `engines.node >= 20.0.0` lo satisfacen los Dockerfiles (`node:24-alpine3.21`) y CI (`node-version: "22"`).
+
 ### Llaves SSH de Git Commit Files
 
 `git-commit-files` usa los parámetros cifrados `github_ssh_private_key` y

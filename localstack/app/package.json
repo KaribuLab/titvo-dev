@@ -13,7 +13,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "22.7.9",
-    "aws-cdk": "2.1029.3",
+    "aws-cdk": "2.1145.0",
     "ts-node": "^10.9.2",
     "turbowatch": "^2.29.4",
     "typescript": "~5.6.3"
@@ -22,7 +22,7 @@
     "@aws-sdk/client-dynamodb": "^3.914.0",
     "@aws-sdk/client-secrets-manager": "^3.1029.0",
     "@aws-sdk/lib-dynamodb": "^3.914.0",
-    "aws-cdk-lib": "2.215.0",
+    "aws-cdk-lib": "2.261.0",
     "constructs": "^10.0.0"
   }
 }

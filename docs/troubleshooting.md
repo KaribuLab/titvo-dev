@@ -179,3 +179,106 @@ cd src/agent
 2. O forzar: `aws s3 rm s3://<bucket>/<repo>/locks/<branch>.json`.
 
 Si usas `uv`, sincroniza dependencias según tu `pyproject.toml` (grupo `dev` incluye Ruff).
+
+## Remediación de advisories de npm (transitivo vs bundleado)
+
+Cuando Dependabot reporta una dependencia vulnerable en un lockfile, el procedimiento de
+remediación depende de la naturaleza de la dependencia. Distinguir antes de actuar.
+
+### Auditar el lockfile
+
+```bash
+# Inventario reproducible: lista cada entrada de <PKG> en todos los package-lock.json
+find . -name "package-lock.json" \
+  -not -path "*/node_modules/*" -not -path "*/.opencode/*" \
+  | while read l; do
+  python3 -c "
+import json
+d = json.load(open('$l'))
+for k, e in d.get('packages', {}).items():
+    if k.endswith('node_modules/<PKG>'):
+        print(f'$l\t{k}\t{e.get(\"version\")}\tinBundle={e.get(\"inBundle\", False)}\tdev={e.get(\"dev\", False)}')
+"
+done
+```
+
+Si una entrada tiene `"inBundle": true` es **bundleada** dentro del tarball del paquete
+padre: `npm overrides` no la reescribe. Si es `false` es **transitiva resoluble** y entra
+dentro de la remediación estándar.
+
+### Resoluble transitiva (sin `inBundle`)
+
+Para transitivos resolubles, regenerá el lock con la versión parcheada — basta si la
+versión cabe dentro del rango declarado por el dependiente. Ejemplo con `fast-uri`
+(parent `ajv@8.17.1` declara `^3.0.1`):
+
+```bash
+npm update <pkg> --no-audit --no-fund
+# Verificar: la versión quedó >= al parche; package.json sin cambios
+diff <(git show HEAD:package.json) package.json
+```
+
+Si tras regenerar la versión sigue en el rango vulnerable, agregar un `overrides` con
+el rango parcheado y documentar la justificación en `design.md`:
+
+```json
+{
+  "overrides": { "<pkg>": "^<X.Y.Z>" }
+}
+```
+
+> Nota: npm 10+ rechaza publicar un `overrides` que apunte a un paquete
+> `bundledDependencies`/`bundleDependencies`. No es la solución para bundles.
+
+### Bundleada (con `inBundle: true`)
+
+`npm overrides` no reescribe dependencias bundleadas (el árbol viene resuelto dentro del
+tarball publicado y npm lo respeta). Las únicas opciones son:
+
+1. **Subir el paquete contenedor** a una versión que ya no incluya la dependencia
+   vulnerable (o que la incluya parcheada). Verificarlo contra el tarball del
+   registry: `npm view <contenedor>@<version> dependencies` y
+   `npm view <contenedor>@<version> dist`.
+2. **Excluirla con `peerDependenciesMeta.optional`** — solo si el uso real no la
+   necesita.
+
+Ejemplo: `aws-cdk-lib@2.215.0` bundleaba `fast-uri` (vía `table` → `ajv` →
+`fast-uri`). `aws-cdk-lib@2.261.0` eliminó `table` de sus `dependencies`, por lo que
+subir la lib borra la copia vulnerable del árbol en lugar de parchearla.
+
+### Error CLI vs lib (cloud assembly schema)
+
+Al subir `aws-cdk-lib` también suele ser necesario subir el CLI `aws-cdk` porque
+comparten `@aws-cdk/cloud-assembly-schema`. Si la lib salta de `^48.6.0` a `^54.0.0`
+y el CLI sigue en `^48.x`, `cdk synth` falla con:
+
+> This CDK CLI is not compatible with the CDK library used by your application.
+> Please upgrade the CLI to the latest version. (Cloud assembly schema version
+> mismatch: Maximum schema version supported is 48.x.x, but found 54.0.0. You need
+> at least CLI version 2.1144.0 to read this manifest.)
+
+Solución: bumpear el CLI (`aws-cdk` en `devDependencies`) a una versión >= al primer
+release posterior a la fecha de la lib objetivo. Para `aws-cdk-lib@2.261.0`
+(2026-07-02), `aws-cdk@2.1145.0` (2026-10-08) o superior sirve. Pineá el CLI en
+el Dockerfile con `ARG CDK_VERSION=<X.Y.Z>` para que `docker compose up cdk` use la
+misma versión compatible (la imagen quedaba con el latest al build time, no
+determinístico).
+
+### Verificar el resultado
+
+Tras cualquier bump de CDK, validá el cambio con **diff de plantilla sintetizada** por
+app afectada:
+
+```bash
+# Capturar baseline ANTES del bump
+cdklocal synth -o /tmp/baseline  # o la ruta del cdklocal
+
+# Bump + re-synth
+# diff entre *.template.json baseline y nuevo
+diff /tmp/baseline/*.template.json /tmp/after/*.template.json
+```
+
+Las diferencias aceptables son: `Analytics` (CDK version metadata comprimido), hash de
+Asset (re-zip de lambda), y logical IDs derivados de cambios de asset hash. Cualquier
+cambio de recurso de negocio o de propiedad funcional requiere justificación explícita
+antes de cerrar el change.
