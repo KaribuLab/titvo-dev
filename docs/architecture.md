@@ -132,10 +132,29 @@ flowchart TD
 | RAG Retrieval Node | `infra/adapters/langgraph/nodes/rag_retrieval_node.py` | Descarga `index.db` de S3 y busca chunks por cada archivo seleccionado; almacena en `rag_chunks` |
 | RAG Context Port | `domain/ports/rag_context_port.py` | Puerto hexagonal `IRagContextPort` con `configure()`, `search()` y `close()` |
 | RAG Context Adapter | `infra/adapters/s3_sqlite_rag_context_adapter.py` | Descarga S3 + búsqueda sqlite-vec; degradación graceful ante errores |
-| Expert Nodes | `infra/adapters/langgraph/nodes/expert_nodes.py` | Seis expertos con filtros de archivo; cada uno filtra `rag_chunks` por `should_analyze_file()` |
-| Merge Node | `infra/adapters/langgraph/nodes/merge_findings_node.py` | Dedup por clave (`get_dedup_key`), estado FAILED/WARNING/COMPLETED |
+| Expert Nodes | `infra/adapters/langgraph/nodes/expert_nodes.py` | Seis expertos con filtros de archivo; cada uno filtra `rag_chunks` por `should_analyze_file()`. Lotes concurrentes con reintentos solo ante errores transitorios; un error fatal del proveedor abre el breaker compartido (ver abajo) |
+| LLM Errors | `infra/adapters/llm_errors.py` | Clasifica errores del proveedor (`RETRY` / `FAIL_BATCH` / `FATAL`) por `status_code` y cuerpo, sin acoplarse a un SDK; `ProviderCircuitBreaker` compartido por scan |
+| Merge Node | `infra/adapters/langgraph/nodes/merge_findings_node.py` | Dedup por clave (`get_dedup_key`), estado FAILED/WARNING/COMPLETED; con `provider_error` cierra `FAILED` + `error` y omite L2 |
 | FindingsMerger | `domain/services/findings_merger.py` | Política en dominio: severidad menor ante conflictos mismos `(path,line,category)` |
 | PromptRegistry | `prompts/__init__.py` | Carga prompts embebidos |
+
+## Errores del proveedor LLM
+
+Los expertos clasifican cada excepción del modelo antes de reintentar (`llm_errors.classify`):
+
+| Clase | Cuándo | Efecto |
+|-------|--------|--------|
+| `RETRY` | 429 por rate limit, 5xx, timeouts, red, errores desconocidos | Hasta 3 intentos con backoff exponencial |
+| `FAIL_BATCH` | 400 por `context_length_exceeded`, `prompt is too long`, `content_filter` | Ese lote falla sin reintento; los demás siguen |
+| `FATAL` | 401, 402, 403, 404, 400 genérico, 429 con `insufficient_quota` / `credit_balance_exhausted` / billing | Abre el `ProviderCircuitBreaker` compartido |
+
+Con el breaker abierto, los lotes que aún no llamaron al proveedor se abortan sin llamarlo y quedan en
+`failed_batches` con `error="aborted: <causa>"`; cada experto deja una sola línea de resumen y emite
+`provider_error` en el estado (reducer `keep_first`). `merge` responde `status=FAILED`,
+`error="Proveedor LLM no disponible: <causa>"`, `incomplete` con todos los archivos no analizados, y
+no llama al modelo para L2. `LangGraphAgent` reinicia el breaker antes de cada invocación. El adapter
+RAG aplica la misma clasificación al proveedor de embeddings: tras un error `FATAL` no vuelve a
+llamarlo durante el scan (el análisis continúa sin RAG).
 
 ## Contrato MCP (gateway Titvo)
 
@@ -145,8 +164,14 @@ Las tools **no están descritas de nuevo aquí**, pero el agente debe respetar e
 2. `mcp.tool.git.commit-files.poll` con `jobId` hasta `SUCCESS`/`FAILURE` → lista `filesPaths` y metadatos `scanMode`, `scanRef`, `storagePrefix` cuando aplican.
 3. `mcp.tool.files` con **`path`** por cada elemento.
 
-En `commit`, el worker mantiene keys S3 `{commitId}/{filePath}`. En `full`, el worker usa un prefijo
-aislado por job (`full/{jobId}/...`) y el agente normaliza esos paths antes de entregarlos a expertos.
+En `commit`, el worker clona con `--depth 2` y selecciona solo los archivos añadidos, copiados,
+modificados o renombrados por el commit respecto a su primer padre
+(`git diff-tree -r --diff-filter=ACMR <sha>^ <sha>`); los borrados no se suben. Un commit raíz (sin
+padre) cae al árbol completo y lo deja en el log. Un commit que solo borra archivos devuelve
+`filesPaths=[]` y el agente lo marca `FAILED` ("No files in commit"). Las keys S3 son
+`{commitId}/{filePath}`. En `full`, el worker clona con `--depth 1`, lista el árbol completo del ref y
+usa un prefijo aislado por job (`full/{jobId}/...`); el agente normaliza esos paths antes de
+entregarlos a expertos.
 
 Legacy: el modelo puede orquestarlo en varios turnos. LangGraph: lo hace código en `MCPRetrievalNode` (sin LLM para esa parte).
 
