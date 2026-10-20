@@ -43,3 +43,10 @@ Antes de disparar el delta, el agente SHALL verificar si el commit del scan ya f
 #### Scenario: rag-indexer mantiene idempotencia como defensa en profundidad
 - **WHEN** el agente dispara un delta y el rag-indexer recibe un commit que ya es el `latest` de la rama
 - **THEN** el rag-indexer omite la indexación (comportamiento existente en `_execute_delta`) sin error
+
+### Requirement: CLI no dispara delta Git
+CLI tasks SHALL bypass post-scan Git delta indexing.
+
+#### Scenario: Resultado CLI
+- **WHEN** a CLI analysis returns
+- **THEN** no remote Git delta job is triggered

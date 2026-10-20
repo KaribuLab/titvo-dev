@@ -18,15 +18,19 @@ El system prompt del agente SHALL instruir explícitamente que:
 - **THEN** el mensaje de usuario NO incluye la sección de contexto RAG y el análisis procede solo con los archivos del commit vía MCP
 
 ### Requirement: El agente usa los archivos del commit exclusivamente via MCP
-El agente SHALL obtener los archivos del commit a analizar únicamente a través del nodo MCP (`mcp_retrieve`). El índice vectorial NO debe usarse como fuente de los archivos del commit.
+For Git tasks the agent SHALL retrieve analysis files via MCP. For CLI tasks it SHALL retrieve uploaded snapshot packages using CliRetrievalNode. RAG MUST NOT substitute analysis files and remote branch RAG SHALL be disabled for CLI tasks.
 
 #### Scenario: Archivos del commit obtenidos via MCP
-- **WHEN** el grafo LangGraph ejecuta el nodo `mcp_retrieve`
-- **THEN** los archivos del commit se obtienen via la herramienta MCP correspondiente al SCM (GitHub/Bitbucket/CLI)
+- **WHEN** the source is GitHub or Bitbucket
+- **THEN** MCP obtains analysis files using the existing contract
+
+#### Scenario: Snapshot CLI
+- **WHEN** the source is CLI
+- **THEN** verified uploaded files are analyzed without MCP or remote branch RAG
 
 #### Scenario: Agente no mezcla fuentes de archivos
-- **WHEN** el agente tiene acceso tanto al índice RAG como a los archivos via MCP
-- **THEN** usa MCP para los archivos del commit y el índice RAG solo como contexto de fondo (arquitectura general del proyecto)
+- **WHEN** the agent has an analysis source and an available RAG index
+- **THEN** Git uses MCP as its analysis source with RAG only as background, and CLI uses its uploaded snapshot with remote RAG disabled
 
 ### Requirement: Un fallo no recuperable del proveedor de embeddings no se repite durante el scan
 

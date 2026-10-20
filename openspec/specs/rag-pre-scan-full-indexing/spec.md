@@ -56,3 +56,10 @@ El dominio del agente SHALL definir el port `IRagIndexStatusPort` con los métod
 #### Scenario: Adaptador S3 confirma commit no indexado
 - **WHEN** no existe el objeto `{bucket}/{repo_slug}/branches/{branch}/{commit_sha}/meta.json` en S3
 - **THEN** `is_commit_indexed` retorna `False`
+
+### Requirement: CLI no indexa Git
+CLI tasks SHALL bypass Git RAG pre-indexing until snapshot-scoped indexing is supported.
+
+#### Scenario: Snapshot local
+- **WHEN** the task source is CLI
+- **THEN** no pre-scan Git RAG job is submitted

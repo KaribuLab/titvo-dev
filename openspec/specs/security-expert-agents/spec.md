@@ -1,4 +1,10 @@
-## ADDED Requirements
+# security-expert-agents Specification
+
+## Purpose
+
+Define los seis expertos de seguridad del agente (prompt hardening, OWASP API, OWASP Web, OWASP Mobile, DevSecOps y vulnerabilidades de código): su alcance, los estándares que aplican, cómo seleccionan archivos por runtime, el formato JSON de sus hallazgos y cómo se componen sus prompts desde el código del agente.
+
+## Requirements
 
 ### Requirement: Five specialized security experts are defined
 
@@ -49,22 +55,32 @@ The `owasp_mobile` expert SHALL use OWASP MASVS, MASTG, and MASWE as its technic
 
 ### Requirement: OWASP mobile expert filters mobile-relevant files
 
-The `owasp_mobile` expert SHALL focus on mobile-relevant source and configuration files, including Android, iOS, Flutter, and React Native artifacts. If no mobile-relevant files match, it SHALL fall back to analyzing all retrieved files.
+The `owasp_mobile` expert SHALL analyze only files whose `runtimes` include `mobile`, as produced
+by the runtime classifier from Android, iOS, Flutter and React Native signals and from the project
+profile. If no file has runtime `mobile`, the expert SHALL be skipped.
 
 #### Scenario: Android files are selected
 
-- **WHEN** retrieved files include `AndroidManifest.xml`, `network_security_config.xml`, `*.kt`, `*.java`, or Gradle files
-- **THEN** the `owasp_mobile` expert receives those files for analysis
+- **WHEN** retrieved files include `AndroidManifest.xml`, `network_security_config.xml`, `*.kt`,
+  `*.java` with Android imports, or Gradle files
+- **THEN** they are classified `mobile` and the `owasp_mobile` expert receives them
 
 #### Scenario: iOS files are selected
 
-- **WHEN** retrieved files include `Info.plist`, `*.entitlements`, `*.swift`, `*.m`, `*.mm`, `Podfile`, or `Package.swift`
-- **THEN** the `owasp_mobile` expert receives those files for analysis
+- **WHEN** retrieved files include `Info.plist`, `*.entitlements`, `*.swift`, `*.m`, `*.mm`,
+  `Podfile`, or `Package.swift`
+- **THEN** they are classified `mobile` and the `owasp_mobile` expert receives them
 
 #### Scenario: Cross-platform mobile files are selected
 
-- **WHEN** retrieved files include `pubspec.yaml`, `*.dart`, `app.json`, `app.config.*`, `metro.config.*`, `react-native.config.*`, `*.tsx`, or `*.jsx`
-- **THEN** the `owasp_mobile` expert receives those files for analysis
+- **WHEN** retrieved files include `pubspec.yaml`, `*.dart`, or `*.tsx`/`*.jsx` that import
+  `react-native`/`expo` or belong to a `mobile_js` project profile
+- **THEN** they are classified `mobile` and the `owasp_mobile` expert receives them
+
+#### Scenario: Web React files are not sent to the mobile expert
+
+- **WHEN** a `*.tsx` file imports `react` but not `react-native` and the profile is not `mobile_js`
+- **THEN** it is classified `browser` and the `owasp_mobile` expert does not receive it
 
 ### Requirement: OWASP mobile expert remains static-analysis only
 
@@ -105,23 +121,71 @@ Each expert SHALL return a JSON object with an `issues` array. Each issue MUST i
 
 ### Requirement: Expert prompts are embedded in agent code
 
-Expert system prompts SHALL be stored as markdown files inside `src/agent/src/code_analysis/prompts/experts/` and loaded at runtime via `PromptRegistry` using `importlib.resources`. Prompts MUST NOT be loaded from DynamoDB or external configuration.
+Expert system prompts SHALL be stored as markdown files inside
+`src/agent/src/code_analysis/prompts/experts/` and loaded at runtime via `PromptRegistry` using
+`importlib.resources`. The effective system message of every expert SHALL be the common preamble
+(`prompts/system_prompt.md`: security boundary, anti-fabrication, runtime trust rules, severity
+and suspicion policy, output format) followed by the expert's domain prompt, composed by
+`PromptRegistry.compose_expert_prompt(name)`. Prompts MUST NOT be loaded from DynamoDB or external
+configuration. `orchestrator_prompt.md` SHALL NOT exist.
 
 #### Scenario: Prompt loaded from codebase
 
 - **WHEN** the agent starts
-- **THEN** the owasp-api expert uses the prompt from `prompts/experts/owasp_api.md` bundled with the agent package
+- **THEN** the owasp-api expert uses the composition of `prompts/system_prompt.md` and
+  `prompts/experts/owasp_api.md` bundled with the agent package
+
+#### Scenario: Preamble precedes every expert
+
+- **WHEN** any expert builds its `SystemMessage`
+- **THEN** the message starts with the common preamble and contains the expert's domain prompt
 
 #### Scenario: Prompt changes require deploy
 
 - **WHEN** an expert prompt is modified
 - **THEN** the change is versioned in the agent repository and deployed with the agent code
 
+#### Scenario: Orchestrator prompt removed
+
+- **WHEN** `PromptRegistry` is inspected
+- **THEN** it exposes no `get_orchestrator_prompt` and the package has no `orchestrator_prompt.md`
+
 ### Requirement: Expert file filtering by relevance
 
-Each expert MAY receive a filtered subset of files based on path/extension patterns relevant to its domain. If the filter yields no files, the expert MUST receive all files as fallback.
+Each expert SHALL select a file when the intersection between the file's `runtimes` and the
+expert's runtime set is non-empty. Path or extension patterns MUST NOT be used. The mapping SHALL
+be:
+
+| Expert | Runtimes |
+|---|---|
+| `prompt_hardening` | all |
+| `code_vulnerabilities` | all |
+| `owasp_api` | `server`, `browser`, `unknown`, `config` |
+| `owasp_web` | `browser`, `server`, `unknown` |
+| `owasp_mobile` | `mobile` |
+| `devsecops` | `infra`, `config`, `test` |
+
+If the selection yields no files, the expert MUST NOT run and MUST record
+`expert_metadata[<name>] = {"files_analyzed": 0, "skipped": true}`. There is no fallback to all
+files.
 
 #### Scenario: DevSecOps expert file filtering
 
-- **WHEN** the devsecops expert is invoked and files matching `*.yml`, `Dockerfile`, `*.tf`, `.github/**` exist
-- **THEN** it receives only those files; otherwise it receives all files
+- **WHEN** the devsecops expert is invoked and files with runtime `infra`, `config` or `test` exist
+- **THEN** it receives only those files
+
+#### Scenario: Frontend HTTP client is analyzed by owasp_api in both scan modes
+
+- **WHEN** a commit scan contains only `src/services/apiClient.ts` (runtimes `["browser"]`) and a
+  full scan contains that file plus 200 server files
+- **THEN** `owasp_api` receives `src/services/apiClient.ts` in both scans
+
+#### Scenario: Multi-runtime file reaches every matching expert
+
+- **WHEN** a file has runtimes `["mobile", "browser"]`
+- **THEN** both `owasp_mobile` and `owasp_web` receive it
+
+#### Scenario: No fallback when nothing matches
+
+- **WHEN** the owasp_mobile expert is invoked and no file has runtime `mobile`
+- **THEN** it performs no LLM call and `expert_metadata.owasp_mobile.skipped` is `true`
