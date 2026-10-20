@@ -156,6 +156,16 @@ no llama al modelo para L2. `LangGraphAgent` reinicia el breaker antes de cada i
 RAG aplica la misma clasificación al proveedor de embeddings: tras un error `FATAL` no vuelve a
 llamarlo durante el scan (el análisis continúa sin RAG).
 
+Aguas abajo, un `FAILED` con `error` se trata como falla de infraestructura, no como resultado de
+análisis: `NotificationService.send_notifications` no genera el reporte HTML ni publica Code
+Insights / issue de GitHub (loguea un `ERROR` con la causa y la cantidad de archivos sin analizar),
+`AnalyseCodeUseCase` persiste la tarea como `FAILED` con ese `error` y deja en los logs la causa, el
+`incomplete.message` y los errores por experto, y `main.py` termina el proceso con exit code 1 vía
+`exit_code_for_task`. Un `FAILED` sin `error` (hallazgos CRITICAL/HIGH) sigue generando reporte y
+notificaciones y sale con exit code 0. El API de estado solo consulta AWS Batch mientras la tarea
+está `PENDING`/`IN_PROGRESS`; como la tabla ya quedó en `FAILED` antes de salir, el exit code no
+altera el polling.
+
 ## Contrato MCP (gateway Titvo)
 
 Las tools **no están descritas de nuevo aquí**, pero el agente debe respetar el flujo asíncrono:

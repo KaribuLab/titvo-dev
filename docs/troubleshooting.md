@@ -30,6 +30,24 @@ git show <commit_hash>
 docker logs mcp-gateway
 ```
 
+### `FAILED` con "Proveedor LLM no disponible" (sin créditos, 401, 403)
+
+**Causa:** El proveedor LLM rechazó la primera llamada con un error no recuperable (`429
+credit_balance_exhausted` / `insufficient_quota`, `401 invalid_api_key`, etc.). El breaker abortó
+el resto de lotes y `merge` cerró el scan como `FAILED` con `error` e `incomplete`.
+
+**Qué esperar:**
+- Log `ERROR` de `analyse_code_use_case`: `Task <id> FAILED because of an infrastructure error: ...`
+  seguido de `Task <id> incomplete: ...` y un `WARNING` por experto con el error del lote.
+- Log `ERROR` de `notification_service`: `Skipping HTML report and notifications ...`. No hay
+  `reportURL`, Code Insights ni issue de GitHub.
+- Tarea en DynamoDB con `status=FAILED` y `result.error` con la causa.
+- Job de AWS Batch en `FAILED` (exit code 1). Si la job definition tiene `retryStrategy.attempts > 1`,
+  Batch relanzará el scan; mantener `attempts = 1`.
+
+**Solución:** Revisar créditos/clave del proveedor (`ai_api_key` en la tabla de configuración) y
+relanzar el scan.
+
 ### Expert returns invalid JSON
 
 **Causa:** El LLM no siguió el formato JSON requerido.
