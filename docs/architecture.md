@@ -1,5 +1,46 @@
 # Arquitectura del Agente
 
+## Endpoint de embeddings del RAG indexer
+
+`LangChainEmbeddingAdapter` resuelve `embedding_base_url` con el mismo puerto
+`IConfigurationProvider` que `embedding_model`. `AwsConfigurationAdapter` consulta
+la tabla DynamoDB existente; la URL no se descifra. El proveedor `openai` permite
+usar tanto OpenAI como servicios compatibles. Modelo y credencial conservan sus
+fuentes actuales. El cliente se inicializa una vez por instancia y es compartido
+por `embed` y `embed_iter`.
+
+```mermaid
+sequenceDiagram
+    participant I as RAG indexer
+    participant C as IConfigurationProvider (AWS)
+    participant D as DynamoDB
+    participant E as Cliente OpenAIEmbeddings
+    participant P as Endpoint de embeddings
+    I->>C: get_value(provider, model, base_url) por clave embedding_*
+    C->>D: get_item(parameter_id) por clave
+    D-->>C: value o registro ausente
+    C-->>I: Valores de configuración
+    I->>C: get_secret(embedding_api_key)
+    C->>D: get_item(embedding_api_key)
+    D-->>C: Credencial cifrada
+    Note over C: Descifrar mediante servicio de cifrado existente
+    C-->>I: Credencial
+    alt URL no vacía tras eliminar espacios exteriores
+        I->>E: Crear con modelo, credencial, base_url y check_embedding_ctx_length=False
+    else URL ausente o vacía
+        I->>E: Crear con modelo y credencial (defaults previos del SDK)
+    end
+    loop Lotes de embed o embed_iter
+        I->>E: embed_documents(textos), reutilizando cliente
+        E->>P: Solicitud al endpoint resuelto
+        P-->>E: Vectores
+        E-->>I: Embeddings en orden
+    end
+```
+
+Un error de lectura de configuración interrumpe la inicialización. Cambiar el
+registro afecta a nuevas instancias/jobs. Ver [configuración y ejemplos](./rag-indexer.md#endpoint-de-embeddings-compatible-con-openai).
+
 ## Vista General
 
 ```mermaid

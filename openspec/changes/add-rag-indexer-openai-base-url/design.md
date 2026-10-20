@@ -37,6 +37,12 @@ La inicialización actual de `OpenAIEmbeddings` pasa únicamente modelo y creden
 - [El SDK puede resolver un endpoint desde variables de entorno existentes] → Con parámetro ausente omitir el argumento, preservando el comportamiento previo; con valor explícito comprobar que prevalece.
 - [Una instancia conserva su endpoint después de cambiar DynamoDB] → Documentar que el nuevo valor se aplica al crear otra instancia/job.
 
+## Referencias verificadas
+
+- Documentación oficial consultada mediante `find-docs`/Context7: https://reference.langchain.com/python/langchain-openai/embeddings/base/OpenAIEmbeddings
+- Versiones instaladas verificadas: `langchain-openai 1.2.2`, `openai 2.38.0`, `httpx 0.28.1`. Los campos instalados admiten `base_url` (alias de `openai_api_base`), `http_client` y `check_embedding_ctx_length`.
+- Decisión confirmada: pasar `base_url` y `check_embedding_ctx_length=False` con URL personalizada para enviar texto sin tokenización OpenAI. Sin URL se omiten ambos argumentos. Las pruebas usan `httpx.MockTransport` inyectado por `http_client` y comprueban la precedencia frente al endpoint del entorno.
+
 ## Migration Plan
 
 1. Desplegar el adapter actualizado; los despliegues sin el registro siguen funcionando.

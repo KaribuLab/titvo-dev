@@ -62,6 +62,55 @@ s3://<bucket>/
 │               └── meta.json      ← Puntero al último commit indexado
 ```
 
+## Endpoint de embeddings compatible con OpenAI
+
+El indexer obtiene `embedding_base_url` mediante `IConfigurationProvider.get_value`,
+igual que `embedding_model`, desde la tabla indicada por
+`TITVO_DYNAMO_CONFIGURATION_TABLE_NAME`. Es un parámetro opcional no secreto;
+`embedding_api_key` sigue usando el mecanismo cifrado existente.
+
+Configura `embedding_provider=openai`, el modelo admitido por el servicio en
+`embedding_model` y su credencial en `embedding_api_key`. Para la URL base, guarda
+un registro con `parameter_id=embedding_base_url` y `value` igual a la URL completa
+de la API, por ejemplo `https://embeddings.example.com/custom/v1`.
+El indexer conserva ese prefijo, sin añadir `/v1` automáticamente.
+
+Ejemplo AWS (con credenciales y región ya configuradas):
+
+```bash
+aws dynamodb put-item \
+  --table-name "$TITVO_DYNAMO_CONFIGURATION_TABLE_NAME" \
+  --item '{"parameter_id":{"S":"embedding_base_url"},"value":{"S":"https://embeddings.example.com/custom/v1"}}'
+```
+
+Ejemplo LocalStack desde el host:
+
+```bash
+aws --endpoint-url http://localhost:4566 dynamodb put-item \
+  --table-name "$TITVO_DYNAMO_CONFIGURATION_TABLE_NAME" \
+  --item '{"parameter_id":{"S":"embedding_base_url"},"value":{"S":"https://embeddings.example.com/custom/v1"}}'
+```
+
+Los comandos usan la misma tabla que `embedding_model`; sustituye el endpoint de
+ejemplo por uno accesible desde el job. No se requiere una variable de entorno
+adicional para la URL de embeddings.
+
+- Ausente, vacío o solo espacios: conserva la resolución anterior del SDK,
+  incluidas sus opciones de entorno existentes. Se eliminan espacios exteriores.
+- Con URL: se pasa `base_url` explícitamente y
+  `check_embedding_ctx_length=False` para enviar texto en vez de tokens OpenAI.
+  El servicio debe admitir el modelo, tamaño de chunks y API de embeddings usados;
+  el SDK no divide automáticamente los textos por su límite de tokens en esta rama.
+- Los fallos de lectura de configuración se propagan; no cambian silenciosamente
+  al endpoint predeterminado.
+- El cliente se reutiliza: inicia otro job para aplicar cambios de configuración.
+- El consumidor del índice debe usar el mismo espacio vectorial/modelo y
+  dimensiones. Cambiar de modelo requiere reindexación y configurar el consumidor
+  de forma coherente.
+
+Para revertir, restaura URL, modelo y credencial anteriores y ejecuta otro job.
+Eliminar `embedding_base_url` restaura la resolución anterior del endpoint.
+
 ## Variables de entorno
 
 | Variable | Requerida | Descripción |
@@ -449,4 +498,3 @@ El `IndexResultDto` incluye `files_skipped_resume: int` que reporta cuántos arc
 - `LangChainEmbeddingAdapter.embed_iter(texts_iter)` itera chunks uno a uno, batcheando on-the-fly. Permite streaming chunk-by-chunk.
 - `LangChainCodeSplitter.iter_chunks(file)` y `_process_files` cooperan para que por cada chunk se haga `insert_one` + `embedding_provider.embed_iter()` sin acumular listas en memoria.
 - Memoria pico del bloque: ~10 KB (1 chunk + 1 embedding) vs ~6 MB con listas pre-batched.
-
