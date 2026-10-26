@@ -75,6 +75,12 @@ un registro con `parameter_id=embedding_base_url` y `value` igual a la URL compl
 de la API, por ejemplo `https://embeddings.example.com/custom/v1`.
 El indexer conserva ese prefijo, sin añadir `/v1` automáticamente.
 
+El agente (`src/agent`) lee el mismo `embedding_base_url` al embeber la consulta del scan,
+así que basta configurar estas claves una vez para ambos servicios. Si el agente loguea
+`Embedding provider rejected the request (401 invalid_api_key ...)` apuntando a
+`platform.openai.com` mientras el indexer funciona, el agente está corriendo una imagen
+anterior que ignoraba `embedding_base_url`.
+
 Ejemplo AWS (con credenciales y región ya configuradas):
 
 ```bash

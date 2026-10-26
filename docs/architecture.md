@@ -9,6 +9,13 @@ usar tanto OpenAI como servicios compatibles. Modelo y credencial conservan sus
 fuentes actuales. El cliente se inicializa una vez por instancia y es compartido
 por `embed` y `embed_iter`.
 
+El agente usa las mismas cuatro claves (`embedding_provider`, `embedding_model`,
+`embedding_api_key`, `embedding_base_url`) en `S3SqliteRagContextAdapter` para embeber la
+consulta del scan, con las mismas opciones (`base_url` y `check_embedding_ctx_length=False`
+cuando hay URL). Si el agente consultara otro endpoint que el indexer, el vector de la
+consulta no sería comparable con el índice y el proveedor podría rechazar la credencial
+(por ejemplo una key de OpenRouter enviada a OpenAI devuelve `401 invalid_api_key`).
+
 ```mermaid
 sequenceDiagram
     participant I as RAG indexer
