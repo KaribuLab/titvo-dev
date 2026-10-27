@@ -505,6 +505,6 @@ El `IndexResultDto` incluye `files_skipped_resume: int` que reporta cuántos arc
 ### Batching explícito + streaming
 
 - `LangChainEmbeddingAdapter.embed(texts)` particiona en bloques de `embedding_batch_size` (parámetro de la tabla de configuración, default 1000; antes `TITVO_EMBEDDING_BATCH_SIZE`) y emite logs `INFO Embedded batch i/N chunks=N duration_ms=Y` por bloque.
-- `LangChainEmbeddingAdapter.embed_iter(texts_iter)` itera chunks uno a uno, batcheando on-the-fly. Permite streaming chunk-by-chunk.
+- `LangChainEmbeddingAdapter.embed_iter(texts_iter)` consume los chunks en lotes y emite pares `(chunk, embedding)` uno a uno. El use case inserta directamente desde esos pares; nunca vuelve a leer el iterador de chunks, porque el adapter ya lo consumió por adelantado. (Antes el use case hacía `zip(chunk_iter, embed_iter(chunk_iter))` sobre el mismo generador: insertaba un solo chunk por archivo con el vector del chunk siguiente. Los índices creados con esa versión deben regenerarse con un full index.)
 - `LangChainCodeSplitter.iter_chunks(file)` y `_process_files` cooperan para que por cada chunk se haga `insert_one` + `embedding_provider.embed_iter()` sin acumular listas en memoria.
 - Memoria pico del bloque: ~10 KB (1 chunk + 1 embedding) vs ~6 MB con listas pre-batched.
