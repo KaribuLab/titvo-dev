@@ -75,6 +75,10 @@ un registro con `parameter_id=embedding_base_url` y `value` igual a la URL compl
 de la API, por ejemplo `https://embeddings.example.com/custom/v1`.
 El indexer conserva ese prefijo, sin añadir `/v1` automáticamente.
 
+El tamaño de lote también vive en la tabla: `parameter_id=embedding_batch_size` con un entero
+positivo en `value` (default `1000` si falta). Un valor inválido aborta el job al primer
+`embed` con `ValueError`, para no indexar con un lote distinto del configurado.
+
 El agente (`src/agent`) lee el mismo `embedding_base_url` al embeber la consulta del scan,
 así que basta configurar estas claves una vez para ambos servicios. Si el agente loguea
 `Embedding provider rejected the request (401 invalid_api_key ...)` apuntando a
@@ -500,7 +504,7 @@ El `IndexResultDto` incluye `files_skipped_resume: int` que reporta cuántos arc
 
 ### Batching explícito + streaming
 
-- `LangChainEmbeddingAdapter.embed(texts)` particiona en bloques de `TITVO_EMBEDDING_BATCH_SIZE` (default 1000) y emite logs `INFO Embedded batch i/N chunks=N duration_ms=Y` por bloque.
+- `LangChainEmbeddingAdapter.embed(texts)` particiona en bloques de `embedding_batch_size` (parámetro de la tabla de configuración, default 1000; antes `TITVO_EMBEDDING_BATCH_SIZE`) y emite logs `INFO Embedded batch i/N chunks=N duration_ms=Y` por bloque.
 - `LangChainEmbeddingAdapter.embed_iter(texts_iter)` itera chunks uno a uno, batcheando on-the-fly. Permite streaming chunk-by-chunk.
 - `LangChainCodeSplitter.iter_chunks(file)` y `_process_files` cooperan para que por cada chunk se haga `insert_one` + `embedding_provider.embed_iter()` sin acumular listas en memoria.
 - Memoria pico del bloque: ~10 KB (1 chunk + 1 embedding) vs ~6 MB con listas pre-batched.
