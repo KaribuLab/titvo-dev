@@ -48,6 +48,25 @@ el resto de lotes y `merge` cerró el scan como `FAILED` con `error` e `incomple
 **Solución:** Revisar créditos/clave del proveedor (`ai_api_key` en la tabla de configuración) y
 relanzar el scan.
 
+### Contenedor que no termina (scan colgado durante días)
+
+**Causa:** Un request al modelo de chat nunca respondió y el proceso quedó esperando. Antes del
+change `agent-scan-timeouts` los clientes se construían sin `timeout` (httpx `Timeout(None)`) y no
+había deadline global, así que el job de Batch seguía `RUNNING` indefinidamente.
+
+**Qué esperar ahora:**
+- Request colgado: `WARNING` del experto `... attempt N/3 failed (... timed out); retrying` y, si se
+  agotan los intentos, el lote queda en `failed_batches` como cualquier error `RETRY`.
+- Scan que supera `scan_timeout_seconds` (default 3000s): `ERROR` `LangGraph workflow failed` con
+  `ScanTimeoutError: Scan aborted: the workflow exceeded scan_timeout_seconds=3000 (task_id=...)`,
+  tarea `FAILED` con ese `error`, sin reporte ni notificaciones, exit code 1.
+- Si el contenedor igual supera el `job_timeout` de Batch (3600s), Batch lo mata y el status API
+  marca la tarea `FAILED` al próximo polling, pero sin `result.error`.
+
+**Solución:** Ajustar `ai_request_timeout_seconds` / `scan_timeout_seconds` en la tabla de
+configuración (sin redeploy) si el proveedor es lento; revisar el proveedor si los timeouts se
+repiten.
+
 ### Expert returns invalid JSON
 
 **Causa:** El LLM no siguió el formato JSON requerido.

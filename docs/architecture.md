@@ -204,6 +204,19 @@ no llama al modelo para L2. `LangGraphAgent` reinicia el breaker antes de cada i
 RAG aplica la misma clasificación al proveedor de embeddings: tras un error `FATAL` no vuelve a
 llamarlo durante el scan (el análisis continúa sin RAG).
 
+### Deadlines
+
+Dos límites acotan la duración de un scan, ambos leídos de la tabla de configuración:
+
+| Parámetro | Default | Dónde aplica |
+|-----------|---------|--------------|
+| `ai_request_timeout_seconds` | 180 | `LangchainAgentModelFactory` lo pasa como `timeout` a `ChatOpenAI`, `ChatAnthropic` y `ChatGoogleGenerativeAI`; un request colgado lanza timeout, que `classify` trata como `RETRY` |
+| `scan_timeout_seconds` | 3000 | `LangGraphAgent` envuelve `workflow.ainvoke` en `asyncio.wait_for`; al vencer lanza `ScanTimeoutError` y el scan cierra `FAILED` con `error` explícito (sin reporte, exit 1) |
+
+Sin el primero los SDKs construyen `httpx` con `Timeout(None)` y un lote colgado deja el contenedor
+vivo hasta que Batch lo mate (`job_timeout` = 3600s en `aws/batch/terragrunt.hcl`). El segundo debe
+quedar por debajo de ese `job_timeout` para que la tarea se cierre en DynamoDB con causa antes del kill.
+
 Aguas abajo, un `FAILED` con `error` se trata como falla de infraestructura, no como resultado de
 análisis: `NotificationService.send_notifications` no genera el reporte HTML ni publica Code
 Insights / issue de GitHub (loguea un `ERROR` con la causa y la cantidad de archivos sin analizar),
