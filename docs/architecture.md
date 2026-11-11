@@ -1,5 +1,36 @@
 # Arquitectura del Agente
 
+## Selección defensiva de snapshots CLI
+
+El adaptador CLI valida cada tar.gz en memoria, incluyendo rutas, límites y
+manifiesto, antes de filtrar contenido. Registra exclusiones por NUL o UTF-8 inválido
+con ruta y motivo, sin contenido. Conserva todas las rutas para detectar duplicados
+entre paquetes. El batch debe aportar al menos un texto analizable; un paquete
+solo binario puede coexistir con otro que contiene código. Los errores de integridad
+siguen abortando todo el scan. La heurística NUL no identifica todo formato binario.
+
+```mermaid
+sequenceDiagram
+    participant N as CliRetrievalNode
+    participant R as CliSnapshotRepository
+    participant A as S3 / DynamoDB
+    N->>R: get_files(batch_id)
+    R->>A: Consultar todas las páginas del batch
+    loop Cada paquete registrado
+        R->>A: Descargar tar.gz
+        R->>R: Validar rutas, límites y manifiesto
+        R->>R: Comprobar duplicados con todas las rutas previas
+        R->>R: Excluir NUL / UTF-8 inválido y registrar motivo
+    end
+    alt Integridad inválida o batch sin texto analizable
+        R-->>N: Excepción descriptiva
+        N-->>N: mcp_error, cero archivos, scan fallido
+    else Texto válido disponible
+        R-->>N: Archivos UTF-8 intactos, ordenados
+        N-->>N: Continuar análisis
+    end
+```
+
 ## Endpoint de embeddings del RAG indexer
 
 `LangChainEmbeddingAdapter` resuelve `embedding_base_url` con el mismo puerto
