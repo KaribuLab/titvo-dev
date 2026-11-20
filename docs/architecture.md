@@ -235,6 +235,30 @@ no llama al modelo para L2. `LangGraphAgent` reinicia el breaker antes de cada i
 RAG aplica la misma clasificación al proveedor de embeddings: tras un error `FATAL` no vuelve a
 llamarlo durante el scan (el análisis continúa sin RAG).
 
+### Espera RAG antes del análisis
+
+El composition root (`src/agent/src/main.py`) lee
+`rag_indexing_timeout_seconds` mediante `AwsConfigurationAdapter.get_value` al
+iniciar cada scan Git. Valida segundos finitos positivos e inyecta ese snapshot
+en `AnalyseCodeUseCase`; el caso de uso no conoce DynamoDB. Si falta la clave o
+está vacía/solo espacios, `main.py` usa 600 segundos y registra el default para
+compatibilidad. Un valor no vacío inválido falla; no hay override por entorno.
+CLI omite la lectura e
+inyecta `None`, porque no requiere indexación Git.
+
+Cada job esperado (full inicial y delta bloqueante de full scan) dispone de un
+deadline monotónico independiente. Se consulta cada 10 segundos, acortando el
+último sleep al tiempo restante, sin máximo de intentos. Cola, ejecución e IO
+consumen presupuesto. El reloj se comprueba antes y después de consultar Batch:
+un resultado tardío no habilita el análisis. Las llamadas síncronas pueden
+demorar la detección hasta su retorno. Al vencer se propaga `TimeoutError` con
+job ID, repositorio, rama/commit, elapsed y timeout; no se cancela el job remoto.
+
+El delta post-scan por commit sigue siendo fire-and-forget. El seed local inserta
+`"600"` solamente cuando no existe; cambiar el registro afecta scans nuevos sin
+redeploy. Ver [configuración, migración y diagrama de secuencia](rag-indexer.md#timeout-de-espera-del-agente).
+Los límites externos de Batch y del SDK son independientes de esta espera.
+
 ### Deadlines
 
 Dos límites acotan la duración de un scan, ambos leídos de la tabla de configuración:
@@ -280,10 +304,40 @@ Legacy: el modelo puede orquestarlo en varios turnos. LangGraph: lo hace código
 ### Acceso SSH a repositorios
 
 `git-commit-files` accede a GitHub y Bitbucket exclusivamente mediante comandos Git sobre SSH. El worker
-acepta las URLs HTTPS o SSH existentes, valida que el host sea exactamente `github.com` o
-`bitbucket.org` y construye un remoto SSH canónico. El host selecciona internamente el parámetro cifrado
+acepta las URLs HTTPS o SCP SSH existentes, valida que el host sea exactamente `github.com`,
+`bitbucket.org` o `ssh.bitbucket.org` y construye un remoto SSH canónico. Ambos nombres de Bitbucket
+usan `git@ssh.bitbucket.org:workspace/repo.git`. El host selecciona internamente el parámetro cifrado
 `github_ssh_private_key` o `bitbucket_ssh_private_key`; el contrato MCP no permite enviar llaves ni nombres
 de parámetros.
+
+`rag-indexer` aplica la misma normalización de transporte, preservando la URL de entrada como
+identidad de indexación. Las URLs HTTPS continúan en `bitbucket.org`. RAG verifica las host keys
+de `ssh.bitbucket.org` con `StrictHostKeyChecking=yes`; `git-commit-files` conserva su política
+actual `StrictHostKeyChecking=no`. Ante fallo o timeout de un comando Git, `rag-indexer` registra
+subcomando, exit code y stderr (sin secretos) para diagnóstico operativo.
+
+```mermaid
+sequenceDiagram
+    participant Caller as Consumidor
+    participant Reader as git-commit-files / rag-indexer
+    participant Config as Configuración cifrada
+    participant Git as Git + SSH
+    participant BB as ssh.bitbucket.org
+    Caller->>Reader: URL HTTPS o SCP de Bitbucket + ref
+    Reader->>Reader: Validar host exacto y coordenadas
+    Reader->>Reader: Derivar remoto SSH, conservar URL original
+    Reader->>Config: bitbucket_ssh_private_key
+    Config-->>Reader: Llave desencriptada
+    Reader->>Git: Resolver / clone / fetch con llave temporal
+    opt rag-indexer
+        Git->>Git: Verificar host con known_hosts y StrictHostKeyChecking=yes
+    end
+    Git->>BB: Acceso SSH al repositorio
+    BB-->>Git: Referencias y objetos Git
+    Git-->>Reader: Archivos / blobs
+    Reader->>Reader: Limpiar llave y repositorio temporales
+    Reader-->>Caller: Resultado del scan o indexación
+```
 
 Cada mensaje SQS obtiene una instancia aislada del cliente SSH. El directorio de clone, el archivo temporal
 de llave y el SHA resuelto pertenecen a un solo job, aunque la Lambda procese varios mensajes con

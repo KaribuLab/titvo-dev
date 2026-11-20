@@ -19,6 +19,129 @@ TITVO_COMMIT_SHA=abc123 \
 python -m src.main
 ```
 
+## Timeout de espera del agente
+
+El agente lee `rag_indexing_timeout_seconds` de la tabla indicada por
+`TITVO_DYNAMO_CONFIGURATION_TABLE_NAME` al comenzar cada scan Git. El registro es
+no secreto: `parameter_id` y `value` son strings; por ejemplo, `value="1800"`
+permite esperar hasta 30 minutos **por job**. Debe ser un número finito mayor que
+cero; se aceptan decimales y espacios exteriores. Si falta o está vacío/solo
+espacios, el agente usa **600 segundos (10 minutos)** y lo registra como default,
+para compatibilidad con configuraciones antiguas. Texto no numérico, cero,
+negativos, NaN o infinito producen un error antes de enviar jobs.
+No hay override por variable de entorno; los errores de lectura se propagan.
+
+- La lectura se hace una vez por scan. Editar la tabla afecta scans nuevos; los
+  que ya comenzaron conservan el valor leído.
+- Aplica al full inicial si la rama no tiene índice y al delta bloqueante si un
+  full scan necesita actualizar el commit. Cada espera recibe su propio plazo.
+- Los scans CLI no leen ni validan este parámetro. El delta post-scan por commit
+  sigue siendo fire-and-forget.
+- El agente consulta cada 10 segundos; la última espera se acorta al tiempo
+  restante. Mide tiempo monotónico desde el inicio de la espera, contando cola,
+  ejecución y consultas. Ya no hay un límite de 60 intentos.
+- No se consulta ni se acepta éxito a partir del vencimiento. Un plazo menor o
+  igual a 10 segundos puede vencer antes de la primera consulta.
+
+### Despliegue y ajuste
+
+La clave es opcional para desplegar: si falta, se conservan los 600 segundos
+históricos. Para jobs más largos, configurar un plazo operativo explícito.
+Este ejemplo inicializa 1800 segundos solo si la clave no existe:
+
+```bash
+aws dynamodb put-item \
+  --table-name "$TITVO_DYNAMO_CONFIGURATION_TABLE_NAME" \
+  --item '{"parameter_id":{"S":"rag_indexing_timeout_seconds"},"value":{"S":"1800"}}' \
+  --condition-expression 'attribute_not_exists(parameter_id)'
+```
+
+Si devuelve `ConditionalCheckFailedException`, el registro ya existe: revisar su
+valor antes de cambiarlo. Para ajustar deliberadamente un valor existente a 1800:
+
+```bash
+aws dynamodb update-item \
+  --table-name "$TITVO_DYNAMO_CONFIGURATION_TABLE_NAME" \
+  --key '{"parameter_id":{"S":"rag_indexing_timeout_seconds"}}' \
+  --update-expression 'SET #v = :v' \
+  --expression-attribute-names '{"#v":"value"}' \
+  --expression-attribute-values '{":v":{"S":"1800"}}'
+
+aws dynamodb get-item \
+  --table-name "$TITVO_DYNAMO_CONFIGURATION_TABLE_NAME" \
+  --key '{"parameter_id":{"S":"rag_indexing_timeout_seconds"}}' \
+  --consistent-read
+```
+
+Usar las credenciales/región del ambiente. En LocalStack, añadir
+`--endpoint-url http://localhost:4566`; el bootstrap crea `"600"` solo si falta,
+sin sobrescribir ajustes posteriores. El seed coincide con el default de
+compatibilidad del agente. Elegir el valor según la duración observada
+del indexador; el cálculo automático por volumen queda para otro change.
+
+Rollback: volver a la imagen anterior del agente. El registro puede permanecer;
+esa imagen lo ignora y recupera su límite fijo anterior.
+
+### Diagnóstico y límites
+
+Los logs identifican el job y el presupuesto, por ejemplo:
+`Indexing job <id> status: RUNNING (elapsed=610s, timeout=1800s)`.
+Si vence, `TimeoutError` incluye job ID, repositorio, rama/commit, tiempo
+transcurrido y timeout. El análisis no comienza y **el job Batch no se cancela**;
+puede seguir indexando. Consultar ese job para diagnosticar su estado.
+
+Este plazo no modifica el timeout de ejecución Batch, los timeouts del SDK ni los
+del modelo. Una consulta síncrona al SDK puede retrasar la detección del
+vencimiento hasta retornar; un éxito que llega tarde se rechaza. Revisar los
+límites externos al seleccionar un presupuesto mayor.
+
+### Secuencia de configuración y espera
+
+```mermaid
+sequenceDiagram
+    participant M as main.py
+    participant C as Tabla de configuración
+    participant A as AnalyseCodeUseCase
+    participant B as AWS Batch / indexador
+    participant G as Grafo de análisis
+    alt Scan CLI
+        M->>A: timeout=None (sin consultar la clave)
+        A->>G: Analizar snapshot sin indexación Git
+    else Scan Git
+        M->>C: get_value(rag_indexing_timeout_seconds)
+        C-->>M: value (o ausente)
+        opt Ausente, vacío o solo espacios
+            M->>M: Usar 600 segundos y registrar default
+        end
+        alt Valor no vacío inválido
+            M-->>M: Error de configuración; no enviar jobs
+        else Número finito positivo
+            M->>A: Inyectar snapshot del timeout
+            loop Full inicial si falta índice; delta si full scan necesita actualizar commit
+                A->>B: Enviar job de indexación
+                B-->>A: job ID
+                A->>A: Nuevo deadline monotónico por job
+                loop Mientras queda presupuesto y no hay estado terminal
+                    A->>A: Esperar min(10s, restante)
+                    opt Deadline aún vigente
+                        A->>B: Consultar estado
+                        B-->>A: Estado
+                        A->>A: Registrar elapsed y comprobar deadline nuevamente
+                    end
+                end
+                alt SUCCEEDED observado antes del deadline
+                    A->>A: Índice listo; continuar flujo
+                else FAILED o timeout
+                    A-->>M: Excepción; abortar análisis (sin cancelar Batch)
+                end
+            end
+            opt Todas las esperas requeridas finalizaron con éxito
+                A->>G: Analizar código
+            end
+        end
+    end
+```
+
 ## Arquitectura
 
 ```mermaid
@@ -263,12 +386,21 @@ GitHub y Bitbucket usan el mismo adaptador y siempre se normalizan a un remoto S
 
 - `git ls-remote --heads` resuelve el SHA exacto de la rama.
 - `git init` crea un repositorio temporal sin working tree.
-- `git fetch --depth=1` trae únicamente el commit requerido; delta trae el SHA previo y el objetivo.
+- `git fetch --depth=1` trae únicamente el commit requerido; delta trae el SHA previo y el objetivo (sin `--quiet`, para conservar stderr útil al fallar).
 - `git ls-tree` y `git cat-file` enumeran y leen blobs sin seguir symlinks del filesystem.
 - `git diff --name-status -z -M` clasifica añadidos, modificados, eliminados y renames.
 
 No existen adaptadores ni fallback de obtención por API. Cualquier fallo SSH termina el job con error.
-La identidad de `github.com` y `bitbucket.org` se verifica con host keys versionadas en la imagen.
+Cuando un comando Git falla o hace timeout, el log y la excepción incluyen el subcomando, el código de salida (si aplica) y el stderr (completo o truncado ~4 KiB por la cola), sin URLs remotas ni rutas de llave.
+La identidad de `github.com` y `ssh.bitbucket.org` se verifica con host keys versionadas en la imagen,
+manteniendo `StrictHostKeyChecking=yes`. Las llaves de Bitbucket se contrastan con los
+[fingerprints oficiales](https://support.atlassian.com/bitbucket-cloud/docs/configure-ssh-and-two-step-verification/).
+
+Las URLs `https://bitbucket.org/workspace/repo.git`, `git@bitbucket.org:workspace/repo.git`
+y `git@ssh.bitbucket.org:workspace/repo.git` se normalizan al destino Git
+`git@ssh.bitbucket.org:workspace/repo.git`. Todas seleccionan `bitbucket_ssh_private_key`.
+La URL original usada en identidades de indexación permanece intacta; no es necesario modificar
+las URLs HTTPS de los consumidores ni los endpoints web/API.
 
 ## Filtrado de archivos
 
@@ -294,7 +426,7 @@ La imagen instala además `git` y `openssh-client` como dependencias del sistema
 
 ### "Unsupported repository provider"
 
-- Solo soporta GitHub (`github.com`) y Bitbucket (`bitbucket.org`)
+- Solo soporta GitHub (`github.com`) y Bitbucket (`bitbucket.org` o `ssh.bitbucket.org` para SSH)
 - Verificar que la URL incluya el host correcto
 
 ### "Could not resolve branch"
@@ -312,6 +444,7 @@ La imagen instala además `git` y `openssh-client` como dependencias del sistema
 
 ### Error de autenticación o host key SSH
 
+- Buscar en logs `Git command failed: git <subcomando> (exit=N): ...` o `Git command timed out: git <subcomando>`; el stderr del proceso indica la causa (p. ej. `Permission denied`, host key mismatch)
 - Verificar que la llave no requiera passphrase y conserve formato PEM válido
 - Verificar que la llave pública asociada esté autorizada como deploy/access key de solo lectura
 - No usar `ssh-keyscan` ni desactivar `StrictHostKeyChecking`; las host keys están fijadas en la imagen
