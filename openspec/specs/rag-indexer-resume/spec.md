@@ -118,15 +118,19 @@ El sistema SHALL subir a S3 un tarball `.tar.gz` del directorio `.git` local (si
 - **THEN** el comportamiento es idéntico al actual (lee todos los blobs)
 
 ### Requirement: Batching explícito de embeddings con tamaño configurable
-`LangChainEmbeddingAdapter.embed(texts)` SHALL particionar la lista de entrada en bloques de `TITVO_EMBEDDING_BATCH_SIZE` chunks (default 1000) y enviar cada bloque con un `embed_documents` independiente. El adapter SHALL loguear `INFO Embedded batch i/N chunks=N duration_ms=Y` por bloque, SHALL reintentar cada bloque hasta 3 veces ante error transitorio, y SHALL retornar la concatenación de los embeddings en el orden original.
+`LangChainEmbeddingAdapter.embed(texts)` SHALL particionar la lista de entrada en bloques de `embedding_batch_size` chunks y enviar cada bloque con un `embed_documents` independiente. El tamaño SHALL resolverse una vez por instancia desde `IConfigurationProvider.get_value("embedding_batch_size")` (tabla DynamoDB de configuración): ausente o vacío → 1000; entero ≤ 0 o no numérico → `ValueError` en el primer uso. Un `batch_size` explícito en el constructor SHALL tener prioridad y no consultar la tabla. El adapter SHALL loguear `INFO Embedded batch i/N chunks=N duration_ms=Y` por bloque, SHALL reintentar cada bloque hasta 3 veces ante error transitorio, y SHALL retornar la concatenación de los embeddings en el orden original.
 
 #### Scenario: Batching funcionado con tamaño por defecto
-- **WHEN** `embed(texts)` recibe 3500 chunks y `TITVO_EMBEDDING_BATCH_SIZE` no está definido (default 1000)
+- **WHEN** `embed(texts)` recibe 3500 chunks y `embedding_batch_size` no existe en la tabla (default 1000)
 - **THEN** el adapter hace 4 llamadas al provider (1000 + 1000 + 1000 + 500) y retorna 3500 embeddings
 
 #### Scenario: Batching con tamaño custom
-- **WHEN** `TITVO_EMBEDDING_BATCH_SIZE=500` y `embed` recibe 1200 chunks
+- **WHEN** la tabla tiene `embedding_batch_size=500` y `embed` recibe 1200 chunks
 - **THEN** el adapter hace 3 llamadas (500 + 500 + 200) y retorna 1200 embeddings
+
+#### Scenario: Tamaño inválido aborta el job
+- **WHEN** la tabla tiene `embedding_batch_size` igual a `0`, `-5` o `abc`
+- **THEN** el primer `embed` lanza `ValueError` con `embedding_batch_size must be a positive integer` y no se llama al provider
 
 #### Scenario: Batch vacío o lista vacía
 - **WHEN** `embed` recibe una lista vacía o un solo batch que resulta en 0 chunks
@@ -137,19 +141,27 @@ El sistema SHALL subir a S3 un tarball `.tar.gz` del directorio `.git` local (si
 - **THEN** el adapter reintenta el mismo batch hasta 3 veces con backoff exponencial (1s, 2s, 4s), loguea `WARNING Retry batch N attempt=X error=...` y continúa si recupera, o aborta si supera el máximo
 
 ### Requirement: Streaming del pipeline split → embed → insert
-El flujo de indexación SHALL procesar archivos en bloques y, dentro de cada bloque, consumir chunks como `Iterator` (no como `List`). El `ICodeSplitter` SHALL exponer `iter_chunks(file) -> Iterator[str]` y el `IEmbeddingProvider` SHALL exponer `embed_iter(texts_iter: Iterator[str]) -> Iterator[list[float]]` que agrupa automáticamente en batches de `TITVO_EMBEDDING_BATCH_SIZE` y emite embeddings uno a uno. El use case SHALL consumir ambos iteradores en un zip para llamar `vector_store.insert_one(...)` por cada chunk, sin acumular listas en memoria.
+El flujo de indexación SHALL procesar archivos en bloques y, dentro de cada bloque, consumir chunks como `Iterator` (no como `List`). El `ICodeSplitter` SHALL exponer `iter_chunks(file) -> Iterator[str]` y el `IEmbeddingProvider` SHALL exponer `embed_iter(texts_iter: Iterable[str]) -> Iterator[tuple[str, list[float]]]` que agrupa automáticamente en lotes de `embedding_batch_size` y emite pares `(chunk, embedding)` uno a uno, en el orden de entrada. El use case SHALL insertar cada par con `vector_store.insert_one(...)` y SHALL NOT volver a leer el iterador de chunks una vez entregado al provider. Si el proveedor devuelve una cantidad de vectores distinta a la de textos del lote, `embed_iter` SHALL lanzar `RuntimeError`.
 
-#### Scenario: Memoria pico del bloque es ~1 chunk
+#### Scenario: Cada chunk se inserta con su propio vector
+- **WHEN** un archivo produce los chunks `a`, `bb`, `ccc` con `batch_size=2`
+- **THEN** se insertan 3 filas `(a, v(a))`, `(bb, v(bb))`, `(ccc, v(ccc))` y el proveedor recibe dos lotes `[a, bb]` y `[ccc]`
+
+#### Scenario: Cardinalidad inválida aborta el run
+- **WHEN** el proveedor devuelve 1 vector para un lote de 2 textos
+- **THEN** `embed_iter` lanza `RuntimeError` y no se inserta ninguna fila de ese lote
+
+#### Scenario: Memoria pico del bloque es ~1 lote
 - **WHEN** el use case procesa un bloque de 50 archivos con 1000 chunks totales
-- **THEN** la memoria pico del bloque es ~1 chunk en texto (~500 bytes) + 1 embedding en float (~6 KB) = ~10 KB, no los 1000 chunks acumulados (~1 MB)
+- **THEN** la memoria pico es un lote de `embedding_batch_size` chunks con sus vectores, no los 1000 chunks acumulados
 
 #### Scenario: Pipeline streaming con batch interno
-- **WHEN** `embed_iter` recibe un iterador de 5000 chunks y `TITVO_EMBEDDING_BATCH_SIZE=1000`
-- **THEN** el adapter hace 5 llamadas al SDK (cada una con 1000 chunks) y emite 5000 embeddings uno a uno a través del iterador retornado
+- **WHEN** `embed_iter` recibe un iterador de 5000 chunks y `embedding_batch_size=1000`
+- **THEN** el adapter hace 5 llamadas al SDK (cada una con 1000 chunks) y emite 5000 pares uno a uno
 
 #### Scenario: Pipeline CPU-bound y I/O-bound no se mezclan en memoria
 - **WHEN** el splitting es lento (CPU) y el embedding es rápido (I/O)
-- **THEN** solo 1 chunk viaja a la vez en el pipeline, sin cola intermedia que infle RAM
+- **THEN** el pipeline conserva como máximo un lote de `embedding_batch_size` chunks con sus vectores y emite pares uno a uno, sin cola intermedia que infle RAM
 
 #### Scenario: Failure mid-stream no pierde chunks ya commiteados
 - **WHEN** un chunk N falla en insert después de haber commiteado N-1 exitosamente

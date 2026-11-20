@@ -8,7 +8,7 @@ Obtención de fuentes de repositorios GitHub y Bitbucket vía Git sobre SSH para
 
 ### Requirement: Selección de proveedor y credencial SSH
 
-El sistema SHALL aceptar URLs HTTPS y SSH de GitHub y Bitbucket, SHALL validar el hostname exacto y SHALL desencriptar únicamente la llave privada asociada al proveedor seleccionado.
+El sistema SHALL aceptar URLs HTTPS y SCP SSH de GitHub y Bitbucket, SHALL validar el hostname exacto y SHALL desencriptar únicamente la llave privada del proveedor. Las entradas Bitbucket con `bitbucket.org` y las SCP con `ssh.bitbucket.org` SHALL producir el remoto `git@ssh.bitbucket.org:<workspace>/<repository>.git` sin modificar la URL de entrada usada como identidad de indexación.
 
 #### Scenario: Repositorio GitHub por URL HTTPS
 - **WHEN** `TITVO_REPO_URL` es `https://github.com/acme/service`
@@ -16,10 +16,18 @@ El sistema SHALL aceptar URLs HTTPS y SSH de GitHub y Bitbucket, SHALL validar e
 
 #### Scenario: Repositorio Bitbucket por URL SSH
 - **WHEN** `TITVO_REPO_URL` es `git@bitbucket.org:acme/service.git`
-- **THEN** el sistema conserva un remoto SSH de Bitbucket y usa el parámetro cifrado `bitbucket_ssh_private_key`
+- **THEN** el sistema usa `git@ssh.bitbucket.org:acme/service.git` y el parámetro cifrado `bitbucket_ssh_private_key`
+
+#### Scenario: Repositorio Bitbucket por URL HTTPS
+- **WHEN** `TITVO_REPO_URL` es `https://bitbucket.org/acme/service.git`
+- **THEN** el sistema usa `git@ssh.bitbucket.org:acme/service.git` y mantiene la URL de entrada para los identificadores persistidos
+
+#### Scenario: Nuevo hostname SSH de Bitbucket
+- **WHEN** `TITVO_REPO_URL` es `git@ssh.bitbucket.org:acme/service.git`
+- **THEN** el sistema usa ese remoto validado y `bitbucket_ssh_private_key`
 
 #### Scenario: Host no soportado
-- **WHEN** la URL no identifica exactamente `github.com` ni `bitbucket.org`
+- **WHEN** la URL no identifica exactamente `github.com`, `bitbucket.org` ni `ssh.bitbucket.org`, incluyendo sufijos engañosos como `ssh.bitbucket.org.example.com`
 - **THEN** el sistema falla antes de desencriptar una llave o ejecutar Git
 
 #### Scenario: Llave del proveedor ausente
@@ -84,7 +92,7 @@ El sistema SHALL obtener por SSH tanto el SHA previamente indexado como el SHA o
 
 ### Requirement: Ejecución SSH no interactiva y verificada
 
-El sistema MUST ejecutar Git sin shell, MUST impedir prompts interactivos y MUST verificar la identidad del endpoint SSH mediante host keys fijadas para GitHub y Bitbucket.
+El sistema MUST ejecutar Git sin shell, MUST impedir prompts interactivos y MUST verificar la identidad del endpoint SSH mediante host keys fijadas para GitHub y para `ssh.bitbucket.org` en Bitbucket.
 
 #### Scenario: Ejecución normal
 - **WHEN** el sistema invoca Git o SSH
@@ -97,6 +105,10 @@ El sistema MUST ejecutar Git sin shell, MUST impedir prompts interactivos y MUST
 #### Scenario: Autenticación requiere interacción
 - **WHEN** la llave requiere passphrase o el servidor solicita una credencial interactiva
 - **THEN** el job falla sin esperar entrada del usuario
+
+#### Scenario: Confianza del nuevo hostname
+- **WHEN** una operación Git contacta `ssh.bitbucket.org`
+- **THEN** las host keys empaquetadas permiten verificar ese hostname con fingerprints oficiales de Atlassian y se mantiene `StrictHostKeyChecking=yes`
 
 ### Requirement: Limpieza determinística de material temporal
 
