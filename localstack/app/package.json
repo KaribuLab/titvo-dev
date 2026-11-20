@@ -5,6 +5,7 @@
     "app": "bin/app.js"
   },
   "scripts": {
+    "test": "node --require ts-node/register --test tests/*.test.ts",
     "build": "tsc",
     "watch": "tsc -w",
     "cdk": "cdk",

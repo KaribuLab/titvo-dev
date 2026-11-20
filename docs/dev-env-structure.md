@@ -43,6 +43,45 @@ Las variables son opcionales para el bootstrap general, pero la correspondiente 
 obligatoria para ejecutar un scan. Las llaves deben estar sin passphrase y sus públicas deben estar
 registradas como deploy keys de solo lectura en GitHub o Bitbucket.
 
+### Timeout de espera RAG en LocalStack
+
+`localstack/app/setup.ts` llama al seed condicional de `configuration-seed.ts`
+para insertar `rag_indexing_timeout_seconds` con string `"600"` en
+`tvo-parameter-configuration-local`, solo si la clave no existe. Repetir el
+bootstrap conserva valores personalizados; si la clave falta o está vacía, el
+agente usa el default compatible de 600 segundos. No requiere agregar una
+variable de entorno de timeout.
+
+Para ajustar deliberadamente el dato a 30 minutos desde el host, usando
+credenciales locales y región configuradas:
+
+```bash
+aws --endpoint-url http://localhost:4566 dynamodb update-item \
+  --table-name tvo-parameter-configuration-local \
+  --key '{"parameter_id":{"S":"rag_indexing_timeout_seconds"}}' \
+  --update-expression 'SET #v = :v' \
+  --expression-attribute-names '{"#v":"value"}' \
+  --expression-attribute-values '{":v":{"S":"1800"}}'
+```
+
+Los próximos scans Git leerán el nuevo plazo; los ya iniciados conservan su
+snapshot. Los ambientes existentes sin la clave siguen funcionando con 600
+segundos; ver [guía operativa](rag-indexer.md#despliegue-y-ajuste).
+
+Pruebas reproducibles (crean y eliminan sus propias tablas temporales):
+
+```bash
+docker compose up -d localstack
+# Desde src/agent:
+TITVO_TEST_DYNAMODB_ENDPOINT=http://localhost:4566 uv run pytest tests/integration/test_rag_timeout_localstack.py -q --log-cli-level=INFO
+# Desde localstack/app (dependencias instaladas con npm ci):
+TITVO_TEST_DYNAMODB_ENDPOINT=http://localhost:4566 npm test
+```
+
+La variable `TITVO_TEST_DYNAMODB_ENDPOINT` selecciona únicamente el emulador para
+los tests, no configura el timeout del agente. Sin ella se omiten los smokes y se
+ejecutan las pruebas unitarias habituales.
+
 ## Agentes
 
 ## Agente AWS Lambda Node.js

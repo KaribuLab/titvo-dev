@@ -1,9 +1,11 @@
+/** Bootstrap local service configuration, secrets and development API keys. */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, CreateSecretCommand, UpdateSecretCommand, DescribeSecretCommand } from '@aws-sdk/client-secrets-manager';
 import { randomBytes, createHash, createCipheriv, randomUUID } from 'crypto';
 import * as path from 'node:path';
 import * as fs from 'fs';
+import { seedRagIndexingTimeout } from './configuration-seed';
 
 const configurationTableName = 'tvo-parameter-configuration-local';
 const apiKeyTableName = 'tvo-api-key-local';
@@ -210,6 +212,8 @@ function privateKeyFromBase64(environmentVariable: string): string | undefined {
         await configurationPutItem('ai_api_key', encrypt(iaAPIKey, aesKey));
         console.log(`Setting rag index bucket: ${ragIndexBucketName}`);
         await configurationPutItem('rag_index_bucket', ragIndexBucketName);
+        // Initial table data only: later bootstrap runs preserve operator changes.
+        await seedRagIndexingTimeout(docClient, configurationTableName);
         console.log(`Setting embedding provider: ${embeddingProvider}`);
         await configurationPutItem('embedding_provider', embeddingProvider);
         console.log(`Setting embedding model: ${embeddingModel}`);
