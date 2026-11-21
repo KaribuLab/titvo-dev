@@ -244,6 +244,11 @@ def scan(
         None, "--repository-url", envvar="TITVO_REPOSITORY_URL"
     ),
     branch: str | None = typer.Option(None, "--branch", envvar="TITVO_BRANCH"),
+    scan_scope: str = typer.Option(
+        "full",
+        "--scan-scope",
+        help="Foco de análisis AWS: commit, staged o full",
+    ),
     wait_timeout: float = typer.Option(1800, "--wait-timeout", min=1),
 ):
     """Preparar un snapshot y ejecutar el análisis en el destino elegido."""
@@ -259,6 +264,7 @@ def scan(
         api_url=api_url,
         repository_url=repository_url,
         branch=branch,
+        scan_scope=scan_scope,
         wait_timeout=wait_timeout,
     )
 
@@ -293,6 +299,7 @@ def execute_scan(
     api_url=None,
     repository_url=None,
     branch=None,
+    scan_scope="full",
     wait_timeout=1800,
 ):
     """Execute an identical snapshot in scripted and guided modes."""
@@ -313,6 +320,7 @@ def execute_scan(
             include,
             guided,
             wait_timeout,
+            scan_scope=scan_scope,
         )
     model = model or "mock"
     check_endpoint(endpoint)
@@ -511,15 +519,31 @@ def dashboard(
 
 
 def execute_cloud_scan(
-    project, api_url, repository_url, branch, yes, output, include, guided, wait_timeout
+    project,
+    api_url,
+    repository_url,
+    branch,
+    yes,
+    output,
+    include,
+    guided,
+    wait_timeout,
+    scan_scope="full",
 ):
     """Reuse preview and authorization, then upload and poll the existing AWS API."""
     from titvo_cli.cloud import CloudClient, repository_identity, save_result
     from titvo_cli.outcome import execution_state
+    from titvo_cli.scan_manifest import (
+        build_scan_manifest,
+        resolve_commit_sha,
+        resolve_focus_files,
+    )
 
     try:
         if not math.isfinite(wait_timeout) or wait_timeout <= 0:
             raise ValueError("El tiempo de espera debe ser positivo y finito.")
+        if scan_scope not in {"commit", "staged", "full"}:
+            raise ValueError("--scan-scope debe ser commit, staged o full")
         client = CloudClient(api_url)
         repository_url, branch = repository_identity(project, repository_url, branch)
         files, manifest = collect(project, include)
@@ -543,8 +567,17 @@ def execute_cloud_scan(
             authorized = yes or typer.confirm(message)
         if not authorized:
             raise typer.Exit()
+        scan_manifest = build_scan_manifest(
+            scope=scan_scope,
+            commit=resolve_commit_sha(project),
+            branch=branch,
+            files_bytes=files,
+            focus_files=resolve_focus_files(project, scan_scope),
+        )
         with console.status("AWS · subiendo snapshot y solicitando análisis…"):
-            task_id = client.start(package(files, manifest), repository_url, branch)
+            task_id = client.start(
+                package(files, manifest), repository_url, branch, scan_manifest
+            )
         console.print(f"Tarea AWS: {task_id}", markup=False)
         console.print(
             f"Para consultar después: titvo status {task_id} --target aws", markup=False

@@ -3,6 +3,7 @@
 import importlib
 import io
 import json
+import re
 from unittest.mock import Mock
 from urllib.error import HTTPError, URLError
 
@@ -23,6 +24,12 @@ class Response(io.BytesIO):
     """Provide the real urllib response context-manager interface."""
 
 
+DEFAULT_URLS = {
+    "snapshot.tar.gz": "https://bucket.s3.example/temp/batch/snapshot.tar.gz?signature=secret",
+    "scan-manifest.json": "https://bucket.s3.example/temp/batch/scan-manifest.json?signature=secret",
+}
+
+
 class API:
     """Test double for existing HTTP contracts; never contacts a provider or AWS."""
 
@@ -39,14 +46,7 @@ class API:
             raise self.failure
         if request.full_url.endswith("/cli-files"):
             return Response(
-                json.dumps(
-                    {
-                        "presigned_urls": self.urls
-                        or {
-                            "snapshot.tar.gz": "https://bucket.s3.example/temp/snapshot.tar.gz?signature=secret"
-                        }
-                    }
-                ).encode()
+                json.dumps({"presigned_urls": self.urls or DEFAULT_URLS}).encode()
             )
         if request.get_method() == "PUT":
             return Response(b"")
@@ -58,30 +58,50 @@ class API:
 
 
 def test_aws_contract_upload_preserves_snapshot_and_scopes_key(tmp_path):
-    """Upload exact manifest bytes to S3 without forwarding the API credential."""
-    from code_analysis.infra.adapters.cli_snapshot import read_snapshot
+    """Upload snapshot + scan-manifest sidecar without forwarding the API credential."""
+    import tarfile
+
+    from titvo_cli.scan_manifest import build_scan_manifest, encode_scan_manifest
 
     (tmp_path / "app.py").write_text("code = 1\n")
     files, manifest = collect(tmp_path)
     archive = package(files, manifest)
+    scan_manifest = build_scan_manifest(
+        scope="full",
+        commit="abc123",
+        branch="dev",
+        files_bytes=files,
+        focus_files=[],
+    )
     api = API()
     client = cloud.CloudClient("https://api.example/stage", "tvok-test-secret", api)
-    task_id = client.start(archive, "git@github.com:team/repo.git", "dev")
+    task_id = client.start(
+        archive, "git@github.com:team/repo.git", "dev", scan_manifest
+    )
     assert task_id == "tvo-scan-test"
-    assert len(api.calls) == 3
-    signed, put, start = api.calls
+    assert len(api.calls) == 4
+    signed, put_tar, put_manifest, start = api.calls
     assert signed.full_url == "https://api.example/stage/cli-files"
     assert signed.get_header("X-api-key") == "tvok-test-secret"
     payload = json.loads(signed.data)
     assert payload["source"] == "cli"
     assert payload["args"]["files"] == [
-        {"name": "snapshot.tar.gz", "content_type": "application/gzip"}
+        {"name": "snapshot.tar.gz", "content_type": "application/gzip"},
+        {"name": "scan-manifest.json", "content_type": "application/json"},
     ]
-    assert put.get_method() == "PUT"
-    assert put.get_header("X-api-key") is None
-    assert put.get_header("Content-type") == "application/gzip"
-    assert put.data == archive
-    assert read_snapshot(put.data) == [{"path": "app.py", "content": "code = 1\n"}]
+    assert put_tar.get_method() == "PUT"
+    assert put_tar.get_header("X-api-key") is None
+    assert put_tar.get_header("Content-type") == "application/gzip"
+    assert put_tar.data == archive
+    with tarfile.open(fileobj=io.BytesIO(put_tar.data), mode="r:gz") as tar:
+        names = {member.name for member in tar.getmembers() if member.isfile()}
+    assert "app.py" in names
+    assert ".titvo-manifest.json" in names
+    assert put_manifest.get_method() == "PUT"
+    assert put_manifest.get_header("X-api-key") is None
+    assert put_manifest.get_header("Content-type") == "application/json"
+    assert put_manifest.data == encode_scan_manifest(scan_manifest)
+    assert "scan-manifest.json" not in names
     trigger = json.loads(start.data)
     assert trigger == {
         "source": "cli",
@@ -108,7 +128,12 @@ def test_failed_upload_does_not_trigger_retry_or_change_destination(failure):
     api = API(failure)
     client = cloud.CloudClient("https://api.example", "tvok-secret", api)
     with pytest.raises(ValueError) as exc:
-        client.start(b"archive", "https://github.com/team/repo", "main")
+        client.start(
+            b"archive",
+            "https://github.com/team/repo",
+            "main",
+            {"version": 1, "scope": "full", "commit": "a", "branch": "main", "focus_files": [], "files": []},
+        )
     assert len(api.calls) == 2
     assert "secret" not in str(exc.value)
     assert "No se cambió de destino" in str(exc.value)
@@ -116,13 +141,30 @@ def test_failed_upload_does_not_trigger_retry_or_change_destination(failure):
 
 def test_documented_list_signed_url_shape_is_accepted():
     """Support the older documented API response without changing upload semantics."""
-    api = API(urls=[{"name": "snapshot.tar.gz", "url": "https://s3.example/file"}])
+    api = API(
+        urls=[
+            {"name": "snapshot.tar.gz", "url": "https://s3.example/file"},
+            {"name": "scan-manifest.json", "url": "https://s3.example/manifest"},
+        ]
+    )
     assert (
         cloud.CloudClient("https://api.example", "key", api).start(
-            b"tar", "https://github.com/a/b", "main"
+            b"tar",
+            "https://github.com/a/b",
+            "main",
+            {
+                "version": 1,
+                "scope": "full",
+                "commit": "a",
+                "branch": "main",
+                "focus_files": [],
+                "files": [],
+            },
         )
         == "tvo-scan-test"
     )
+    puts = [call for call in api.calls if call.get_method() == "PUT"]
+    assert len(puts) == 2
 
 
 @pytest.mark.parametrize(
@@ -218,7 +260,21 @@ def test_aws_report_preserves_counts_cost_and_external_link(tmp_path):
 
 def test_aws_scan_uses_no_docker_or_lab_clients(monkeypatch, tmp_path):
     """CLI dispatch reaches the cloud transport and preserves completed security rejection."""
+    import subprocess
+
     (tmp_path / "app.py").write_text("code")
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.email", "test@example.com"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.name", "Test"], check=True
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "add", "app.py"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"], check=True
+    )
     client = Mock(endpoint="https://api.example")
     client.start.return_value = "tvo-scan-test"
     client.wait.return_value = {
@@ -258,6 +314,18 @@ def test_aws_scan_uses_no_docker_or_lab_clients(monkeypatch, tmp_path):
     assert "Con hallazgos · 3" in result.output
     assert "sin hallazgos reportados" not in result.output
     lab.assert_not_called()
+    assert client.start.call_count == 1
+    assert len(client.start.call_args.args) >= 4 or "scan_manifest" in (
+        client.start.call_args.kwargs
+    )
+    scan_manifest = (
+        client.start.call_args.kwargs.get("scan_manifest")
+        if client.start.call_args.kwargs.get("scan_manifest") is not None
+        else client.start.call_args.args[3]
+    )
+    assert scan_manifest["scope"] == "full"
+    assert scan_manifest["focus_files"] == []
+    assert {item["path"] for item in scan_manifest["files"]} == {"app.py"}
 
 
 def test_cloud_confirmation_denied_never_uploads(monkeypatch, tmp_path):
@@ -299,7 +367,9 @@ def test_missing_cloud_key_and_model_override_reject_before_upload(
     override = runner.invoke(
         cli.app, ["scan", str(tmp_path), "--target", "aws", "--model", "mock", "--yes"]
     )
-    assert override.exit_code != 0 and "omite --model" in override.output
+    # Typer may wrap BadParameter text with ANSI escape codes.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", override.output)
+    assert override.exit_code != 0 and "omite --model" in plain
     assert "provider-secret" not in missing.output
 
 

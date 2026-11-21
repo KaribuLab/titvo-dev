@@ -151,42 +151,54 @@ class CloudClient:
             raise ValueError("Titvo devolvió una respuesta inesperada.")
         return result
 
-    def start(self, archive: bytes, repository_url: str, branch: str) -> str:
-        """Create a fresh batch, PUT the frozen archive, and trigger only after upload."""
+    def start(
+        self,
+        archive: bytes,
+        repository_url: str,
+        branch: str,
+        scan_manifest: dict | bytes,
+    ) -> str:
+        """Create a fresh batch, PUT snapshot + scan-manifest sidecar, then trigger."""
+        from titvo_cli.scan_manifest import encode_scan_manifest
+
         batch_id = str(uuid.uuid4())
-        name = "snapshot.tar.gz"
+        snapshot_name = "snapshot.tar.gz"
+        manifest_name = "scan-manifest.json"
+        manifest_bytes = encode_scan_manifest(scan_manifest)
         signed = self.post(
             "/cli-files",
             {
                 "source": "cli",
                 "args": {
                     "batch_id": batch_id,
-                    "files": [{"name": name, "content_type": "application/gzip"}],
+                    "files": [
+                        {"name": snapshot_name, "content_type": "application/gzip"},
+                        {
+                            "name": manifest_name,
+                            "content_type": "application/json",
+                        },
+                    ],
                 },
             },
         )
-        # The deployed use case returns a mapping. Older documented responses use a list.
-        urls = signed.get("presigned_urls")
-        url = (
-            urls.get(name)
-            if isinstance(urls, dict)
-            else next(
-                (
-                    item.get("url")
-                    for item in urls
-                    if isinstance(item, dict) and item.get("name") == name
-                ),
-                None,
-            )
-            if isinstance(urls, list)
-            else None
-        )
-        if not isinstance(url, str):
+        snapshot_url = _presigned_url(signed.get("presigned_urls"), snapshot_name)
+        manifest_url = _presigned_url(signed.get("presigned_urls"), manifest_name)
+        if not isinstance(snapshot_url, str):
             raise ValueError(
                 "Titvo no entregó una URL para el snapshot; no se inició el análisis."
             )
-        https_url(url)
-        self._request(url, archive, {"Content-Type": "application/gzip"}, "PUT")
+        if not isinstance(manifest_url, str):
+            raise ValueError(
+                "Titvo no entregó una URL para scan-manifest.json; no se inició el análisis."
+            )
+        https_url(snapshot_url)
+        https_url(manifest_url)
+        self._request(
+            snapshot_url, archive, {"Content-Type": "application/gzip"}, "PUT"
+        )
+        self._request(
+            manifest_url, manifest_bytes, {"Content-Type": "application/json"}, "PUT"
+        )
         response = self.post(
             "/run-scan",
             {
@@ -230,6 +242,19 @@ class CloudClient:
                     f"La tarea {task_id} sigue en AWS. Consulta con titvo status {task_id} --target aws; no vuelvas a subirla para consultar."
                 )
             time.sleep(min(interval, remaining))
+
+
+def _presigned_url(urls, name: str) -> str | None:
+    """Resolve a named upload URL from mapping or older list-shaped API responses."""
+    if isinstance(urls, dict):
+        url = urls.get(name)
+        return url if isinstance(url, str) else None
+    if isinstance(urls, list):
+        for item in urls:
+            if isinstance(item, dict) and item.get("name") == name:
+                url = item.get("url")
+                return url if isinstance(url, str) else None
+    return None
 
 
 def validate_task_id(value):

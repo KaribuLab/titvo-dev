@@ -107,8 +107,9 @@ la clasificación runtime y el fan-out de expertos de main; sus lotes usan la
 concurrencia acotada del Agent (por defecto 4). Los errores y lotes incompletos
 quedan explícitos en cobertura. No se vuelve al truncamiento de la versión inicial.
 
-Para CLI se desactiva RAG remoto. Agregar RAG requiere indexar el mismo snapshot,
-no descargar otra versión del proyecto por Git.
+En AWS, el Agent indexa el snapshot CLI hacia `{repo}/cli/latest/` (sin clonar
+por Git) y usa ese índice como contexto RAG de fondo. El foco de análisis sigue
+siendo el snapshot / `focus_files` del sidecar `scan-manifest.json`.
 
 ## Pruebas
 
@@ -243,7 +244,7 @@ caché (subconjunto de entrada) y salida. No estima tokens a partir de caractere
 Las llamadas fallidas o sin telemetría hacen incompleto el consumo registrado.
 
 El costo es **estimado**, en USD, de las llamadas al modelo; no es factura y no
-incluye AWS, impuestos ni embeddings (RAG está desactivado). Tarifas estándar
+incluye AWS, impuestos ni embeddings RAG. Tarifas estándar
 [OpenAI GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini)
 verificadas el 2026-10-06: por millón de tokens, entrada US$0.40, entrada en caché
 US$0.10 y salida US$1.60. El reporte guarda tarifas, fuente y fecha de verificación.
@@ -310,10 +311,12 @@ solo porque tenga cero hallazgos.
 MiniStack es el laboratorio de desarrollo. La CLI permite elegir ese laboratorio
 o conectarse al API productivo desde el menú y los comandos.
 El Agent sí recibe tareas `cli` desde el flujo AWS existente: lee `batch_id`
-de DynamoDB y descarga los paquetes de S3; las tareas Git conservan MCP y RAG.
-AWS Batch recibe las variables del bucket y tabla CLI desde los parámetros SSM
-existentes. Se mantiene el pipeline de despliegue del Agent y la autenticación
-normal del frontend/BFF. No activar `VITE_TITVO_LAB` en producción.
+de DynamoDB y descarga los paquetes de S3 (snapshot + sidecar). Las tareas Git
+conservan MCP y RAG de rama; las tareas CLI disparan indexación hacia
+`{repo}/cli/latest/` y usan ese índice como RAG de fondo (mismo timeout de
+tabla que Git). AWS Batch recibe las variables del bucket y tabla CLI desde los
+parámetros SSM existentes. Se mantiene el pipeline de despliegue del Agent y la
+autenticación normal del frontend/BFF. No activar `VITE_TITVO_LAB` en producción.
 
 Ramas para revisión: Agent `feat/cli-fullscan-aws`, BFF
 `feat/scan-execution-summary`, frontend `feat/scan-dashboard` y laboratorio
@@ -341,9 +344,47 @@ API Titvo y una clave Titvo, normalmente `tvok…`. No uses la clave de OpenAI:
 el modelo/proveedor se configura en el servicio. La entrada de clave es oculta
 y dura solo esa sesión; también puede heredarse de `TITVO_API_KEY`.
 
-En AWS la CLI solicita `POST /cli-files`, sube el tar.gz a la URL prefirmada
-mediante PUT (sin enviar la clave Titvo a S3), inicia `POST /run-scan` con
-`source=cli` y `scan_mode=full`, y consulta `POST /scan-status`.
+En AWS la CLI solicita `POST /cli-files` para **dos** objetos del mismo
+`batch_id`, sube ambos con PUT a las URLs prefirmadas (sin enviar la clave Titvo
+a S3), inicia `POST /run-scan` con `source=cli` y `scan_mode=full`, y consulta
+`POST /scan-status`. Objetos bajo `temp/{batch_id}/`:
+
+| name | Contenido |
+|------|-----------|
+| `snapshot.tar.gz` | Pack del working tree (incluye `.titvo-manifest.json` interno) |
+| `scan-manifest.json` | Sidecar versionado: focus + inventory del tar |
+
+`--scan-scope` controla el foco de análisis (`commit` | `staged` | `full`;
+default `full`):
+
+- `full`: `focus_files` vacío → se analizan todos los paths analizables del snapshot
+- `commit` / `staged`: `focus_files` = paths del diff correspondiente (pueden
+  incluir borrados ausentes del tar)
+
+Ejemplo de `scan-manifest.json` (version 1):
+
+```json
+{
+  "version": 1,
+  "scope": "full",
+  "commit": "a1b2c3d4e5f6789012345678901234567890abcd",
+  "branch": "main",
+  "focus_files": [],
+  "files": [
+    {
+      "path": "src/app.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 128
+    }
+  ]
+}
+```
+
+El sidecar **no** va dentro del tar ni se lista como archivo de código. Tras el
+upload, el Agent tipa `*.tar.gz` vs `scan-manifest.json`, analiza
+`focus_files` y dispara el rag-indexer con `TITVO_SOURCE_TYPE=cli` hacia
+`cli/latest/`.
+
 Se acepta el mapa de URLs del use-case actual y el formato de lista documentado.
 Los endpoints API y subida deben usar HTTPS; no se siguen redirecciones.
 La API y el Agent de las ramas correspondientes deben estar desplegados para
@@ -363,6 +404,8 @@ export TITVO_API_KEY
 export TITVO_DASHBOARD_URL=https://DASHBOARD_DE_TU_INSTANCIA
 
 titvo scan ./proyecto --target aws
+# Scope de foco (default full); dual upload snapshot + scan-manifest:
+titvo scan ./proyecto --target aws --scan-scope commit
 # Si no hay origin o rama activa:
 titvo scan ./proyecto --target aws \
   --repository-url https://github.com/ORGANIZACION/REPOSITORIO --branch main

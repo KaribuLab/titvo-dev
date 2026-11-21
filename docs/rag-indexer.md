@@ -17,26 +17,34 @@ TITVO_REPO_URL=https://github.com/org/repo \
 TITVO_BRANCH=main \
 TITVO_COMMIT_SHA=abc123 \
 python -m src.main
+
+# Modo CLI (snapshot S3 + scan-manifest; sin Git)
+TITVO_SOURCE_TYPE=cli \
+TITVO_SOURCE_BATCH_ID=<batch_id> \
+TITVO_REPO_URL=https://github.com/org/repo \
+TITVO_CLI_FILES_BUCKET=<bucket-temp-cli> \
+python -m src.main
 ```
 
 ## Timeout de espera del agente
 
 El agente lee `rag_indexing_timeout_seconds` de la tabla indicada por
-`TITVO_DYNAMO_CONFIGURATION_TABLE_NAME` al comenzar cada scan Git. El registro es
-no secreto: `parameter_id` y `value` son strings; por ejemplo, `value="1800"`
-permite esperar hasta 30 minutos **por job**. Debe ser un número finito mayor que
-cero; se aceptan decimales y espacios exteriores. Si falta o está vacío/solo
-espacios, el agente usa **600 segundos (10 minutos)** y lo registra como default,
-para compatibilidad con configuraciones antiguas. Texto no numérico, cero,
-negativos, NaN o infinito producen un error antes de enviar jobs.
-No hay override por variable de entorno; los errores de lectura se propagan.
+`TITVO_DYNAMO_CONFIGURATION_TABLE_NAME` al comenzar cada scan (Git y CLI). El
+registro es no secreto: `parameter_id` y `value` son strings; por ejemplo,
+`value="1800"` permite esperar hasta 30 minutos **por job**. Debe ser un número
+finito mayor que cero; se aceptan decimales y espacios exteriores. Si falta o
+está vacío/solo espacios, el agente usa **600 segundos (10 minutos)** y lo
+registra como default, para compatibilidad con configuraciones antiguas. Texto
+no numérico, cero, negativos, NaN o infinito producen un error antes de enviar
+jobs. No hay override por variable de entorno; los errores de lectura se
+propagan.
 
 - La lectura se hace una vez por scan. Editar la tabla afecta scans nuevos; los
   que ya comenzaron conservan el valor leído.
-- Aplica al full inicial si la rama no tiene índice y al delta bloqueante si un
-  full scan necesita actualizar el commit. Cada espera recibe su propio plazo.
-- Los scans CLI no leen ni validan este parámetro. El delta post-scan por commit
-  sigue siendo fire-and-forget.
+- Aplica al full inicial Git si la rama no tiene índice, al delta bloqueante si
+  un full scan necesita actualizar el commit, y a la espera del job CLI hacia
+  `cli/latest/`. Cada espera recibe su propio plazo.
+- El delta post-scan por commit (Git) sigue siendo fire-and-forget.
 - El agente consulta cada 10 segundos; la última espera se acorta al tiempo
   restante. Mide tiempo monotónico desde el inicio de la espera, contando cola,
   ejecución y consultas. Ya no hay un límite de 60 intentos.
@@ -104,21 +112,34 @@ sequenceDiagram
     participant A as AnalyseCodeUseCase
     participant B as AWS Batch / indexador
     participant G as Grafo de análisis
-    alt Scan CLI
-        M->>A: timeout=None (sin consultar la clave)
-        A->>G: Analizar snapshot sin indexación Git
-    else Scan Git
-        M->>C: get_value(rag_indexing_timeout_seconds)
-        C-->>M: value (o ausente)
-        opt Ausente, vacío o solo espacios
-            M->>M: Usar 600 segundos y registrar default
-        end
-        alt Valor no vacío inválido
-            M-->>M: Error de configuración; no enviar jobs
-        else Número finito positivo
-            M->>A: Inyectar snapshot del timeout
+    M->>C: get_value(rag_indexing_timeout_seconds)
+    C-->>M: value (o ausente)
+    opt Ausente, vacío o solo espacios
+        M->>M: Usar 600 segundos y registrar default
+    end
+    alt Valor no vacío inválido
+        M-->>M: Error de configuración; no enviar jobs
+    else Número finito positivo
+        M->>A: Inyectar snapshot del timeout
+        alt Scan CLI
+            A->>B: Job TITVO_SOURCE_TYPE=cli → índice cli/latest/
+            B-->>A: job ID
+            A->>A: Deadline monotónico (mismo presupuesto)
+            loop Mientras queda presupuesto y no hay estado terminal
+                A->>A: Esperar min(10s, restante)
+                opt Deadline aún vigente
+                    A->>B: Consultar estado
+                    B-->>A: Estado
+                end
+            end
+            alt SUCCEEDED antes del deadline
+                A->>G: Analizar focus + RAG fondo cli/latest/
+            else FAILED o timeout
+                A-->>M: Excepción; abortar análisis (sin cancelar Batch)
+            end
+        else Scan Git
             loop Full inicial si falta índice; delta si full scan necesita actualizar commit
-                A->>B: Enviar job de indexación
+                A->>B: Enviar job de indexación Git
                 B-->>A: job ID
                 A->>A: Nuevo deadline monotónico por job
                 loop Mientras queda presupuesto y no hay estado terminal
@@ -173,16 +194,32 @@ flowchart TD
 ## Estructura S3
 
 ```
-s3://<bucket>/
+s3://<bucket-rag>/
 ├── github.com/org/repo/
-│   └── branches/
-│       └── {branch}/
-│           ├── {commit_sha}/
-│           │   ├── index.db       ← Base de datos SQLite con vectores
-│           │   └── meta.json      ← {"commit_sha": "...", "indexed_at": "..."}
-│           └── latest/
-│               ├── index.db       ← Copia del commit más reciente
-│               └── meta.json      ← Puntero al último commit indexado
+│   ├── branches/                         ← índice Git (sin cambios)
+│   │   └── {branch}/
+│   │       ├── {commit_sha}/
+│   │       │   ├── index.db
+│   │       │   └── meta.json
+│   │       └── latest/
+│   │           ├── index.db
+│   │           └── meta.json
+│   └── cli/                              ← índice CLI (snapshot-scoped)
+│       ├── lock.json                     ← exclusión mutua CLI
+│       └── latest/
+│           ├── index.db
+│           ├── manifest.json             ← inventory path+sha256 del último merge
+│           └── meta.json
+```
+
+El bucket de archivos temporales CLI (`TITVO_CLI_FILES_BUCKET` / config
+`cli_files_bucket_name`) guarda el batch bajo `temp/{batch_id}/`:
+
+```
+s3://<bucket-cli-files>/
+└── temp/{batch_id}/
+    ├── snapshot.tar.gz
+    └── scan-manifest.json
 ```
 
 ## Endpoint de embeddings compatible con OpenAI
@@ -248,19 +285,28 @@ Eliminar `embedding_base_url` restaura la resolución anterior del endpoint.
 
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
-| TITVO_REPO_URL | Sí | URL del repositorio (GitHub o Bitbucket) |
-| TITVO_BRANCH | Sí | Rama para full/delta index |
-| TITVO_COMMIT_SHA | No | SHA para delta index (solo para delta) |
+| TITVO_REPO_URL | Sí | URL del repositorio (GitHub o Bitbucket); en CLI define el slug/`cli/latest` |
+| TITVO_BRANCH | Sí (Git) | Rama para full/delta index; no requerida en modo CLI |
+| TITVO_COMMIT_SHA | No | SHA para delta index (solo Git delta) |
+| TITVO_SOURCE_TYPE | No | `cli` selecciona provider S3/tar; ausente o distinto → path Git |
+| TITVO_SOURCE_BATCH_ID | Sí (CLI) | Lee `temp/{id}/snapshot.tar.gz` + `scan-manifest.json` |
+| TITVO_CLI_FILES_BUCKET | Sí (CLI)\* | Bucket temp del batch CLI |
+| TITVO_DYNAMO_CLI_FILES_BUCKET_NAME | Alias | Alias de `TITVO_CLI_FILES_BUCKET` |
+| TITVO_CLI_LOCK_WAIT_SECONDS | No | Espera máxima del lock CLI (default: 300) |
+| TITVO_LOCK_TTL_MINUTES | No | TTL del lock (CLI y Git; default: 360) |
 | TITVO_DYNAMO_CONFIGURATION_TABLE_NAME | Sí | Tabla DynamoDB de configuración |
 | TITVO_ENCRYPTION_KEY_NAME | Sí | Clave KMS para secretos |
 | TITVO_CHUNK_SIZE | No | Tamaño de chunk (default: 1000) |
 | TITVO_CHUNK_OVERLAP | No | Overlap de chunks (default: 200) |
 | TITVO_LOG_LEVEL | No | Nivel de log (default: INFO) |
 
+\*Si no hay env, el indexer usa el parámetro de config `cli_files_bucket_name`.
+
 **Combinaciones válidas:**
 - `TITVO_BRANCH` solo → Full index (resuelve HEAD de la rama)
 - `TITVO_BRANCH` + `TITVO_COMMIT_SHA` → Delta index (compara con índice de la rama)
 - `TITVO_COMMIT_SHA` solo → **Error**: branch es siempre requerido
+- `TITVO_SOURCE_TYPE=cli` + `TITVO_SOURCE_BATCH_ID` + `TITVO_REPO_URL` → índice CLI (sin Git/`ls-remote`)
 
 ## Configuración DynamoDB
 
@@ -279,12 +325,14 @@ estar autorizadas para lectura, no requerir passphrase y conservar saltos de lí
 ## Modos de operación
 
 El agente usa el RAG index como contexto de fondo para correlación, dependencias y arquitectura; no es
-la fuente primaria de archivos analizados. Los archivos primarios siempre vienen del MCP
-`git.commit-files` en modo `commit` o `full`.
+la fuente primaria de archivos analizados. En tasks Git los archivos primarios vienen del MCP
+`git.commit-files` (`commit` o `full`). En tasks CLI vienen del snapshot/`focus_files` del batch;
+el fondo RAG, si existe, se lee de `{repo}/cli/latest/`.
 
-Para `scan_mode=full`, el agente prioriza exactitud sobre velocidad: antes de ejecutar LangGraph,
+Para `scan_mode=full` en Git, el agente prioriza exactitud sobre velocidad: antes de ejecutar LangGraph,
 verifica que el commit/ref objetivo esté indexado con `is_commit_indexed(repo, branch, commit_sha)`.
-Si no lo está, dispara indexación y espera a que termine para evitar contexto stale.
+Si no lo está, dispara indexación y espera a que termine para evitar contexto stale. En CLI siempre
+dispara el job hacia `cli/latest/` y espera con el mismo timeout de tabla.
 
 ### Full Index
 
@@ -375,6 +423,60 @@ sequenceDiagram
 TITVO_REPO_URL=https://github.com/KaribuLab/titvo \
 TITVO_BRANCH=main \
 TITVO_COMMIT_SHA=a1b2c3d \
+TITVO_DYNAMO_CONFIGURATION_TABLE_NAME=titvo-config \
+TITVO_ENCRYPTION_KEY_NAME=titvo-key \
+python -m src.main
+```
+
+### Indexación CLI (`cli/latest/`)
+
+Cuando el agente dispara un job con `TITVO_SOURCE_TYPE=cli`, el indexer **no**
+usa SSH ni `git ls-remote`/`fetch`. Lee el batch temporal y hace merge
+idempotente hacia el índice vivo del repositorio.
+
+**Señal Batch (env mínimo, alineado con el design):**
+
+| Variable | Rol |
+|----------|-----|
+| `TITVO_SOURCE_TYPE=cli` | Selecciona provider S3/tar |
+| `TITVO_SOURCE_BATCH_ID` | Prefijo `temp/{id}/…` |
+| `TITVO_REPO_URL` | Slug / prefijo `{repo}/cli/latest/` |
+| `TITVO_CLI_FILES_BUCKET` (o `TITVO_DYNAMO_CLI_FILES_BUCKET_NAME`, o config `cli_files_bucket_name`) | Bucket temp |
+
+Sin `TITVO_COMMIT_SHA` como modo delta Git.
+
+**Entrada:** `temp/{batch_id}/snapshot.tar.gz` + `temp/{batch_id}/scan-manifest.json`
+(`files[]` = inventory path/sha256/size del tar).
+
+**Salida (mismo bucket RAG que Git):**
+
+```
+{repo_slug}/cli/latest/{index.db,manifest.json,meta.json}
+{repo_slug}/cli/lock.json
+```
+
+**Lock:** wait con timeout default **300s** (`TITVO_CLI_LOCK_WAIT_SECONDS`, poll
+5s). TTL del lock = `TITVO_LOCK_TTL_MINUTES` (default 360); locks con
+`expires_at` pasado se toman (stale takeover), igual que el path Git.
+
+**Merge por path+sha256** sobre `files[]` del sidecar:
+
+- path+hash idéntico → skip (sin embeddings)
+- distinto o nuevo → re-embed
+- ausente en el inventory nuevo → borrar del índice
+
+El agente **siempre** envía el job CLI; si el inventory coincide con
+`cli/latest/manifest.json`, el indexer hace no-op (0 chunks) y libera el lock.
+El timeout de espera del agente es el mismo `rag_indexing_timeout_seconds` que
+en Git. El análisis primario sigue siendo snapshot/`focus_files`; RAG de fondo
+lee `{repo}/cli/latest/index.db` (no `branches/`).
+
+**Ejemplo:**
+```bash
+TITVO_SOURCE_TYPE=cli \
+TITVO_SOURCE_BATCH_ID=batch-abc \
+TITVO_REPO_URL=https://github.com/KaribuLab/titvo \
+TITVO_CLI_FILES_BUCKET=titvo-cli-files \
 TITVO_DYNAMO_CONFIGURATION_TABLE_NAME=titvo-config \
 TITVO_ENCRYPTION_KEY_NAME=titvo-key \
 python -m src.main
@@ -528,7 +630,8 @@ análisis de seguridad. El flujo es:
 al inicio de cada job (el contenedor Batch es efímero, la descarga ocurre una sola vez por ejecución):
 
 ```python
-# Ruta S3: {repo_path}/branches/{branch}/latest/index.db
+# Git:  {repo_path}/branches/{branch}/latest/index.db
+# CLI:  {repo_path}/cli/latest/index.db
 adapter = S3SqliteRagContextAdapter(
     s3_client=boto3.client("s3"),
     bucket_name=TITVO_RAG_INDEXER_BUCKET,
@@ -536,7 +639,7 @@ adapter = S3SqliteRagContextAdapter(
     embedding_model="text-embedding-3-small",
     embedding_api_key=api_key,
 )
-adapter.configure(repository_url, branch)
+adapter.configure(repository_url, branch)  # branch omitido / cli → cli/latest
 ```
 
 ### 2. Búsqueda vectorial en el nodo `rag_retrieve`
